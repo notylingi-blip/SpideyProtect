@@ -54,7 +54,7 @@ function getBaseUrl(req) {
 
 /*
 ==================================================
- API - LIST
+ API - LIST SCRIPTS
 ==================================================
 */
 
@@ -73,7 +73,7 @@ app.get("/api/scripts", (req, res) => {
 
 /*
 ==================================================
- API - UPLOAD SOURCE
+ API - UPLOAD SCRIPT
 ==================================================
 */
 
@@ -94,15 +94,23 @@ app.post("/api/scripts", (req, res) => {
 
     if (source.length > 10 * 1024 * 1024) {
         return res.status(413).json({
-            error: "File too large"
+            error: "File too large. Maximum 10MB."
         });
     }
 
     const id = generateId();
-    const filename = `${id}.lua`;
-    const filepath = path.join(SCRIPTS_DIR, filename);
 
-    fs.writeFileSync(filepath, source, "utf8");
+    const filename = `${id}.lua`;
+    const filepath = path.join(
+        SCRIPTS_DIR,
+        filename
+    );
+
+    fs.writeFileSync(
+        filepath,
+        source,
+        "utf8"
+    );
 
     const script = {
         id,
@@ -118,16 +126,25 @@ app.post("/api/scripts", (req, res) => {
 
     writeDB(db);
 
+    const loaderPage =
+        `${getBaseUrl(req)}/files/loaders/${id}.lua`;
+
+    const executeLoader =
+        `${getBaseUrl(req)}/api/execute/${id}`;
+
     res.json({
         success: true,
+
         script: {
             id: script.id,
             name: script.name,
             enabled: script.enabled,
             createdAt: script.createdAt
         },
-        loader:
-            `${getBaseUrl(req)}/files/loaders/${id}.lua`
+
+        loader: loaderPage,
+
+        executeLoader
     });
 });
 
@@ -169,7 +186,9 @@ app.delete("/api/scripts/:id", (req, res) => {
     const db = readDB();
 
     const index =
-        db.findIndex(x => x.id === req.params.id);
+        db.findIndex(
+            x => x.id === req.params.id
+        );
 
     if (index === -1) {
         return res.status(404).json({
@@ -180,7 +199,10 @@ app.delete("/api/scripts/:id", (req, res) => {
     const script = db[index];
 
     const filepath =
-        path.join(SCRIPTS_DIR, script.filename);
+        path.join(
+            SCRIPTS_DIR,
+            script.filename
+        );
 
     if (fs.existsSync(filepath)) {
         fs.unlinkSync(filepath);
@@ -197,7 +219,7 @@ app.delete("/api/scripts/:id", (req, res) => {
 
 /*
 ==================================================
- PROTECTED PAYLOAD
+ API - PAYLOAD
 ==================================================
 */
 
@@ -211,30 +233,37 @@ app.get("/api/payload/:id", (req, res) => {
         return res
             .status(404)
             .type("text/plain")
-            .send("-- Script not found");
+            .send("-- SpideyProtect: Script not found");
     }
 
     if (!script.enabled) {
         return res
             .status(403)
             .type("text/plain")
-            .send("-- Script disabled");
+            .send("-- SpideyProtect: Script disabled");
     }
 
     const filepath =
-        path.join(SCRIPTS_DIR, script.filename);
+        path.join(
+            SCRIPTS_DIR,
+            script.filename
+        );
 
     if (!fs.existsSync(filepath)) {
         return res
             .status(404)
             .type("text/plain")
-            .send("-- Source missing");
+            .send("-- SpideyProtect: Source missing");
     }
 
     const source =
-        fs.readFileSync(filepath, "utf8");
+        fs.readFileSync(
+            filepath,
+            "utf8"
+        );
 
     res
+        .status(200)
         .type("text/plain")
         .set("Cache-Control", "no-store")
         .send(source);
@@ -242,7 +271,76 @@ app.get("/api/payload/:id", (req, res) => {
 
 /*
 ==================================================
- LOADER
+ EXECUTE LOADER ENDPOINT
+==================================================
+
+This is the endpoint used by the
+copied Lua loader.
+
+The browser-facing /files/loaders/:id.lua
+does NOT expose the source.
+==================================================
+*/
+
+app.get("/api/execute/:id", (req, res) => {
+    const db = readDB();
+
+    const script =
+        db.find(x => x.id === req.params.id);
+
+    if (!script) {
+        return res
+            .status(404)
+            .type("text/plain")
+            .send("-- SpideyProtect: Script not found");
+    }
+
+    if (!script.enabled) {
+        return res
+            .status(403)
+            .type("text/plain")
+            .send("-- SpideyProtect: Script disabled");
+    }
+
+    const filepath =
+        path.join(
+            SCRIPTS_DIR,
+            script.filename
+        );
+
+    if (!fs.existsSync(filepath)) {
+        return res
+            .status(404)
+            .type("text/plain")
+            .send("-- SpideyProtect: Source missing");
+    }
+
+    const source =
+        fs.readFileSync(
+            filepath,
+            "utf8"
+        );
+
+    res
+        .status(200)
+        .type("text/plain")
+        .set("Cache-Control", "no-store")
+        .send(source);
+});
+
+/*
+==================================================
+ LOADER PAGE
+==================================================
+
+IMPORTANT:
+
+Opening:
+
+/files/loaders/ID.lua
+
+will show the SpideyProtect page
+instead of displaying the Lua source.
 ==================================================
 */
 
@@ -253,75 +351,737 @@ app.get("/files/loaders/:id.lua", (req, res) => {
         db.find(x => x.id === req.params.id);
 
     if (!script) {
-        return res
-            .status(404)
-            .type("text/plain")
-            .send(
-                'warn("SpideyProtect: Script not found")'
-            );
+        return res.status(404).send(`
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+content="width=device-width,initial-scale=1">
+<title>SpideyProtect</title>
+</head>
+
+<body style="
+margin:0;
+background:#050b18;
+color:white;
+font-family:Arial;
+display:flex;
+align-items:center;
+justify-content:center;
+min-height:100vh;
+">
+
+<h2>
+SpideyProtect: Script not found
+</h2>
+
+</body>
+</html>
+`);
     }
 
-    if (!script.enabled) {
-        return res
-            .status(403)
-            .type("text/plain")
-            .send(
-                'warn("SpideyProtect: Script disabled")'
-            );
+    const base =
+        getBaseUrl(req);
+
+    const loaderURL =
+        `${base}/api/execute/${script.id}`;
+
+    /*
+    Loader yang disalin user.
+    */
+
+    const loaderCode =
+        `loadstring(game:HttpGet(${JSON.stringify(loaderURL)}))()`;
+
+    res.status(200).send(`
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+name="viewport"
+content="width=device-width, initial-scale=1.0"
+>
+
+<title>
+SpideyProtect • ${escapeHtml(script.name)}
+</title>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+
+    margin: 0;
+
+    padding: 0;
+
+    width: 100%;
+
+    min-height: 100%;
+
+    font-family:
+        Inter,
+        Arial,
+        Helvetica,
+        sans-serif;
+
+    background:
+        radial-gradient(
+            circle at 50% -10%,
+            rgba(0,105,255,.28),
+            transparent 40%
+        ),
+
+        radial-gradient(
+            circle at 0% 50%,
+            rgba(220,0,0,.22),
+            transparent 35%
+        ),
+
+        #020713;
+
+    color: white;
+}
+
+body {
+
+    min-height: 100vh;
+
+    display: flex;
+
+    justify-content: center;
+
+    align-items: center;
+
+    padding: 25px 15px;
+}
+
+.page {
+
+    width: 100%;
+
+    max-width: 760px;
+}
+
+/*
+==================================================
+ BRAND
+==================================================
+*/
+
+.brand {
+
+    text-align: center;
+
+    margin-bottom: 20px;
+}
+
+.logo {
+
+    width: 58px;
+
+    height: 58px;
+
+    margin: 0 auto 10px;
+
+    border-radius: 17px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    font-size: 30px;
+
+    background:
+        linear-gradient(
+            135deg,
+            #ffffff,
+            #dce9ff
+        );
+
+    color: #d40000;
+
+    box-shadow:
+        0 0 35px
+        rgba(0,110,255,.25),
+
+        0 0 25px
+        rgba(255,0,0,.18);
+}
+
+.brand h1 {
+
+    margin: 0;
+
+    font-size: 26px;
+
+    font-weight: 850;
+
+    letter-spacing: -.5px;
+}
+
+.brand p {
+
+    margin:
+        6px 0 0;
+
+    color:
+        rgba(255,255,255,.55);
+
+    font-size: 12px;
+}
+
+/*
+==================================================
+ CARD
+==================================================
+*/
+
+.card {
+
+    width: 100%;
+
+    padding: 25px;
+
+    border-radius: 20px;
+
+    border:
+        1px solid
+        rgba(90,150,255,.18);
+
+    background:
+        linear-gradient(
+            145deg,
+            rgba(8,31,57,.92),
+            rgba(4,15,28,.95)
+        );
+
+    box-shadow:
+
+        0 25px 70px
+        rgba(0,0,0,.4),
+
+        inset 0 1px 0
+        rgba(255,255,255,.04);
+}
+
+/*
+==================================================
+ TITLE
+==================================================
+*/
+
+.card-title {
+
+    text-align: center;
+
+    font-size: 27px;
+
+    font-weight: 850;
+
+    color: #168cff;
+
+    margin-bottom: 9px;
+
+    text-shadow:
+        0 0 18px
+        rgba(0,130,255,.25);
+}
+
+.description {
+
+    text-align: center;
+
+    line-height: 1.55;
+
+    font-size: 14px;
+
+    color:
+        rgba(255,255,255,.62);
+
+    max-width: 570px;
+
+    margin:
+        0 auto 25px;
+}
+
+/*
+==================================================
+ SCRIPT NAME
+==================================================
+*/
+
+.script-name {
+
+    text-align: center;
+
+    margin-bottom: 15px;
+
+    color: white;
+
+    font-size: 13px;
+
+    font-weight: 700;
+}
+
+.script-name span {
+
+    color: #ff4242;
+}
+
+/*
+==================================================
+ LOADER BOX
+==================================================
+*/
+
+.loader-title {
+
+    margin-bottom: 7px;
+
+    font-size: 11px;
+
+    font-weight: 800;
+
+    letter-spacing: 1px;
+
+    color:
+        rgba(255,255,255,.55);
+}
+
+.loader-wrap {
+
+    width: 100%;
+
+    overflow-x: auto;
+
+    overflow-y: hidden;
+
+    -webkit-overflow-scrolling: touch;
+
+    scrollbar-width: thin;
+
+    border-radius: 12px;
+
+    background: #02060c;
+
+    border:
+        1px solid
+        rgba(255,255,255,.1);
+
+    box-shadow:
+        inset 0 0 20px
+        rgba(0,0,0,.25);
+}
+
+/*
+Horizontal scrollbar
+*/
+
+.loader-wrap::-webkit-scrollbar {
+
+    height: 7px;
+}
+
+.loader-wrap::-webkit-scrollbar-track {
+
+    background: #060b12;
+}
+
+.loader-wrap::-webkit-scrollbar-thumb {
+
+    background:
+        linear-gradient(
+            90deg,
+            #e00000,
+            #168cff
+        );
+
+    border-radius: 20px;
+}
+
+.loader-code {
+
+    display: block;
+
+    width: max-content;
+
+    min-width: 100%;
+
+    padding:
+        16px 18px;
+
+    color: #e7edf7;
+
+    font-family:
+        "Courier New",
+        monospace;
+
+    font-size: 13px;
+
+    line-height: 1.5;
+
+    white-space: nowrap;
+
+    user-select: all;
+}
+
+/*
+==================================================
+ COPY BUTTON
+==================================================
+*/
+
+.copy-button {
+
+    width: 100%;
+
+    margin-top: 12px;
+
+    padding: 13px;
+
+    border: none;
+
+    border-radius: 11px;
+
+    cursor: pointer;
+
+    color: white;
+
+    font-size: 14px;
+
+    font-weight: 800;
+
+    background:
+        linear-gradient(
+            90deg,
+            #e00000 0%,
+            #f00000 35%,
+            #087cff 100%
+        );
+
+    box-shadow:
+        0 8px 25px
+        rgba(0,75,255,.12);
+
+    transition:
+        transform .2s,
+        filter .2s;
+}
+
+.copy-button:hover {
+
+    transform:
+        translateY(-2px);
+
+    filter:
+        brightness(1.08);
+}
+
+.copy-button:active {
+
+    transform:
+        translateY(0);
+}
+
+/*
+==================================================
+ SECURITY BOX
+==================================================
+*/
+
+.security {
+
+    margin-top: 18px;
+
+    padding: 14px;
+
+    border-radius: 12px;
+
+    background:
+        rgba(255,255,255,.025);
+
+    border:
+        1px solid
+        rgba(255,255,255,.07);
+
+    text-align: center;
+
+    color:
+        rgba(255,255,255,.55);
+
+    font-size: 12px;
+
+    line-height: 1.5;
+}
+
+.security strong {
+
+    color: #ffffff;
+}
+
+/*
+==================================================
+ FOOTER
+==================================================
+*/
+
+.footer {
+
+    margin-top: 15px;
+
+    text-align: center;
+
+    color:
+        rgba(255,255,255,.3);
+
+    font-size: 10px;
+}
+
+.footer b {
+
+    color: #168cff;
+}
+
+/*
+==================================================
+ MOBILE
+==================================================
+*/
+
+@media(max-width:600px) {
+
+    body {
+
+        padding:
+            18px 12px;
     }
 
-    const payloadURL =
-        `${getBaseUrl(req)}/api/payload/${script.id}`;
+    .card {
 
-    const loader = `-- SpideyProtect
--- Protected Loader
+        padding: 19px;
 
-local URL = ${JSON.stringify(payloadURL)}
+        border-radius: 18px;
+    }
 
-local success, source = pcall(function()
-    return game:HttpGet(URL)
-end)
+    .card-title {
 
-if not success then
-    warn("SpideyProtect: Failed to download payload")
-    return
-end
+        font-size: 23px;
+    }
 
-if not source or source == "" then
-    warn("SpideyProtect: Empty payload")
-    return
-end
+    .description {
 
-local execute, err = loadstring(source)
+        font-size: 13px;
+    }
 
-if not execute then
-    warn("SpideyProtect: Lua error:", err)
-    return
-end
+    .loader-code {
 
-local ok, runtimeError = pcall(execute)
+        font-size: 12px;
 
-if not ok then
-    warn("SpideyProtect: Runtime error:", runtimeError)
-end`;
+        padding:
+            15px;
+    }
 
-    res
-        .status(200)
-        .type("text/plain")
-        .set("Cache-Control", "no-store")
-        .send(loader);
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="page">
+
+    <div class="brand">
+
+        <div class="logo">
+            🕷️
+        </div>
+
+        <h1>
+            SpideyProtect
+        </h1>
+
+        <p>
+            Lua Protection System
+        </p>
+
+    </div>
+
+
+    <div class="card">
+
+        <div class="card-title">
+            This script can't be viewed in a browser
+        </div>
+
+        <div class="description">
+
+            For security, the source is only delivered
+            to the script at runtime.
+            Use the loader below in your script.
+
+        </div>
+
+        <div class="script-name">
+
+            SCRIPT:
+            <span>
+                ${escapeHtml(script.name)}
+            </span>
+
+        </div>
+
+
+        <div class="loader-title">
+            LOADER
+        </div>
+
+
+        <div class="loader-wrap">
+
+            <code
+                class="loader-code"
+                id="loaderCode"
+            >${escapeHtml(loaderCode)}</code>
+
+        </div>
+
+
+        <button
+            class="copy-button"
+            onclick="copyLoader()"
+        >
+            Copy loader
+        </button>
+
+
+        <div class="security">
+
+            🔒 <strong>
+                Source Protected
+            </strong>
+
+            <br>
+
+            The original source is not displayed
+            on this page.
+
+        </div>
+
+    </div>
+
+
+    <div class="footer">
+
+        Protected by
+        <b>
+            SpideyProtect
+        </b>
+        🕷️
+
+    </div>
+
+</div>
+
+
+<script>
+
+const loader =
+    ${JSON.stringify(loaderCode)};
+
+async function copyLoader() {
+
+    const button =
+        document.querySelector(
+            ".copy-button"
+        );
+
+    try {
+
+        await navigator.clipboard.writeText(
+            loader
+        );
+
+        button.textContent =
+            "✓ Loader copied!";
+
+        setTimeout(() => {
+
+            button.textContent =
+                "Copy loader";
+
+        }, 1800);
+
+    } catch (error) {
+
+        /*
+        Fallback untuk browser
+        */
+
+        const textarea =
+            document.createElement(
+                "textarea"
+            );
+
+        textarea.value = loader;
+
+        document.body.appendChild(
+            textarea
+        );
+
+        textarea.select();
+
+        document.execCommand(
+            "copy"
+        );
+
+        textarea.remove();
+
+        button.textContent =
+            "✓ Loader copied!";
+
+        setTimeout(() => {
+
+            button.textContent =
+                "Copy loader";
+
+        }, 1800);
+    }
+}
+
+</script>
+
+</body>
+
+</html>
+`);
 });
 
 /*
 ==================================================
- WEB PANEL
+ MAIN DASHBOARD
 ==================================================
 */
 
 app.get("/", (req, res) => {
+
     const db = readDB();
 
     const cards = db.map(script => {
+
         const loader =
             `${getBaseUrl(req)}/files/loaders/${script.id}.lua`;
 
@@ -341,13 +1101,17 @@ app.get("/", (req, res) => {
             </div>
 
             <div class="script-status ${
-                script.enabled ? "on" : "off"
+                script.enabled
+                    ? "on"
+                    : "off"
             }">
+
                 ${
                     script.enabled
                         ? "● Enabled"
                         : "● Disabled"
                 }
+
             </div>
 
         </div>
@@ -367,6 +1131,12 @@ app.get("/", (req, res) => {
             class="menu"
             id="menu-${script.id}"
         >
+
+            <button
+                onclick='openLoader(${JSON.stringify(loader)})'
+            >
+                🔗 Open Loader
+            </button>
 
             <button
                 onclick='copyLoader(${JSON.stringify(loader)})'
@@ -397,6 +1167,7 @@ app.get("/", (req, res) => {
 
 </div>
 `;
+
     }).join("");
 
     res.send(`
@@ -409,11 +1180,13 @@ app.get("/", (req, res) => {
 <meta charset="UTF-8">
 
 <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
+name="viewport"
+content="width=device-width,initial-scale=1.0"
 >
 
-<title>SpideyProtect</title>
+<title>
+SpideyProtect
+</title>
 
 <style>
 
@@ -438,17 +1211,17 @@ body {
 
         radial-gradient(
             circle at 10% 0%,
-            rgba(255,0,0,.30),
+            rgba(255,0,0,.28),
             transparent 30%
         ),
 
         radial-gradient(
             circle at 90% 100%,
-            rgba(255,255,255,.08),
-            transparent 30%
+            rgba(0,110,255,.22),
+            transparent 35%
         ),
 
-        #070707;
+        #050505;
 }
 
 .header {
@@ -456,23 +1229,26 @@ body {
     padding: 20px 30px;
 
     display: flex;
+
     align-items: center;
 
     border-bottom:
-        1px solid rgba(255,255,255,.1);
+        1px solid
+        rgba(255,255,255,.1);
 
     background:
         linear-gradient(
             90deg,
-            #8b0000,
-            #df0000,
-            #090909
+            #950000,
+            #e00000,
+            #101010
         );
 }
 
 .brand {
 
     display: flex;
+
     align-items: center;
 
     gap: 12px;
@@ -481,10 +1257,13 @@ body {
 .logo {
 
     width: 46px;
+
     height: 46px;
 
     display: flex;
+
     align-items: center;
+
     justify-content: center;
 
     border-radius: 13px;
@@ -496,12 +1275,14 @@ body {
     font-size: 25px;
 
     box-shadow:
-        0 0 25px rgba(255,0,0,.35);
+        0 0 25px
+        rgba(255,0,0,.3);
 }
 
 .brand h1 {
 
     font-size: 23px;
+
     font-weight: 800;
 }
 
@@ -511,10 +1292,10 @@ body {
 
     margin-top: 3px;
 
-    font-size: 11px;
-
     color:
         rgba(255,255,255,.65);
+
+    font-size: 11px;
 }
 
 .container {
@@ -531,18 +1312,16 @@ body {
 
     border-radius: 20px;
 
-    border:
-        1px solid rgba(255,255,255,.1);
-
     background:
         linear-gradient(
             135deg,
             rgba(255,0,0,.16),
-            rgba(255,255,255,.03)
+            rgba(0,100,255,.07)
         );
 
-    box-shadow:
-        0 15px 50px rgba(0,0,0,.35);
+    border:
+        1px solid
+        rgba(255,255,255,.1);
 }
 
 .hero h2 {
@@ -579,7 +1358,8 @@ textarea {
     outline: none;
 
     border:
-        1px solid rgba(255,255,255,.12);
+        1px solid
+        rgba(255,255,255,.12);
 
     border-radius: 11px;
 
@@ -592,33 +1372,26 @@ textarea {
     font-family: inherit;
 }
 
-input:focus,
-textarea:focus {
-
-    border-color:
-        rgba(255,0,0,.55);
-}
-
 textarea {
+
+    grid-column:
+        1 / -1;
 
     min-height: 180px;
 
     resize: vertical;
-
-    grid-column:
-        1 / -1;
 }
 
 .file-row {
 
-    grid-column:
-        1 / -1;
-
     display: flex;
+
+    align-items: center;
 
     gap: 10px;
 
-    align-items: center;
+    grid-column:
+        1 / -1;
 }
 
 .file-label {
@@ -626,15 +1399,12 @@ textarea {
     display: inline-flex;
 
     align-items: center;
-    justify-content: center;
 
-    gap: 8px;
+    justify-content: center;
 
     padding: 12px 18px;
 
     border-radius: 11px;
-
-    cursor: pointer;
 
     background: white;
 
@@ -644,17 +1414,7 @@ textarea {
 
     font-weight: 800;
 
-    transition: .2s;
-}
-
-.file-label:hover {
-
-    transform:
-        translateY(-2px);
-
-    box-shadow:
-        0 8px 25px
-        rgba(255,255,255,.12);
+    cursor: pointer;
 }
 
 .file-name {
@@ -684,32 +1444,22 @@ textarea {
 
     padding: 14px;
 
+    border: none;
+
     border-radius: 11px;
 
     background:
         linear-gradient(
             90deg,
-            #d40000,
-            #ff2020
+            #d00000,
+            #006eff
         );
 
     color: white;
 
     font-weight: 800;
 
-    font-size: 14px;
-
-    transition: .2s;
-}
-
-.upload-button:hover {
-
-    transform:
-        translateY(-2px);
-
-    box-shadow:
-        0 8px 25px
-        rgba(255,0,0,.2);
+    cursor: pointer;
 }
 
 .section-title {
@@ -717,9 +1467,9 @@ textarea {
     margin:
         25px 0 12px;
 
-    font-size: 15px;
-
     color: #aaa;
+
+    font-size: 15px;
 }
 
 .scripts {
@@ -729,7 +1479,7 @@ textarea {
     grid-template-columns:
         repeat(
             auto-fit,
-            minmax(300px, 1fr)
+            minmax(300px,1fr)
         );
 
     gap: 15px;
@@ -757,18 +1507,8 @@ textarea {
         );
 
     border:
-        1px solid rgba(255,255,255,.08);
-
-    transition: .2s;
-}
-
-.script-card:hover {
-
-    transform:
-        translateY(-2px);
-
-    border-color:
-        rgba(255,0,0,.35);
+        1px solid
+        rgba(255,255,255,.08);
 }
 
 .script-info {
@@ -783,11 +1523,13 @@ textarea {
 .script-icon {
 
     width: 45px;
+
     height: 45px;
 
     display: flex;
 
     align-items: center;
+
     justify-content: center;
 
     border-radius: 12px;
@@ -796,7 +1538,7 @@ textarea {
         linear-gradient(
             135deg,
             #e00000,
-            #690000
+            #006eff
         );
 
     font-size: 22px;
@@ -833,12 +1575,14 @@ textarea {
 }
 
 .script-menu {
+
     position: relative;
 }
 
 .dots {
 
     width: 38px;
+
     height: 38px;
 
     border: none;
@@ -866,7 +1610,7 @@ textarea {
 
     top: 45px;
 
-    width: 175px;
+    width: 180px;
 
     padding: 6px;
 
@@ -875,7 +1619,8 @@ textarea {
     background: #161616;
 
     border:
-        1px solid rgba(255,255,255,.1);
+        1px solid
+        rgba(255,255,255,.1);
 
     box-shadow:
         0 15px 40px
@@ -928,44 +1673,6 @@ textarea {
     border-radius: 18px;
 }
 
-.toast {
-
-    position: fixed;
-
-    left: 50%;
-    bottom: 25px;
-
-    z-index: 999;
-
-    padding:
-        13px 20px;
-
-    border-radius: 12px;
-
-    background: white;
-
-    color: #111;
-
-    font-size: 13px;
-
-    font-weight: 700;
-
-    opacity: 0;
-
-    transform:
-        translate(-50%, 80px);
-
-    transition: .25s;
-}
-
-.toast.show {
-
-    opacity: 1;
-
-    transform:
-        translate(-50%, 0);
-}
-
 @media(max-width:700px) {
 
     .header {
@@ -990,27 +1697,23 @@ textarea {
             1fr;
     }
 
-    textarea {
-
-        grid-column:
-            auto;
-    }
-
     .file-row {
-
-        grid-column:
-            auto;
 
         flex-direction: column;
 
         align-items: stretch;
     }
 
+    textarea {
+
+        grid-column: auto;
+    }
+
     .upload-button {
 
-        grid-column:
-            auto;
+        grid-column: auto;
     }
+
 }
 
 </style>
@@ -1021,27 +1724,28 @@ textarea {
 
 <header class="header">
 
-    <div class="brand">
+<div class="brand">
 
-        <div class="logo">
-            🕷️
-        </div>
+    <div class="logo">
+        🕷️
+    </div>
 
-        <div>
+    <div>
 
-            <h1>
-                SpideyProtect
-            </h1>
+        <h1>
+            SpideyProtect
+        </h1>
 
-            <span>
-                Lua Protection System
-            </span>
-
-        </div>
+        <span>
+            Lua Protection System
+        </span>
 
     </div>
 
+</div>
+
 </header>
+
 
 <main class="container">
 
@@ -1102,9 +1806,11 @@ textarea {
 
 </section>
 
+
 <div class="section-title">
     Your Scripts
 </div>
+
 
 <section class="scripts">
 
@@ -1122,62 +1828,38 @@ ${
 
 </main>
 
-<div
-    id="toast"
-    class="toast"
-></div>
 
 <script>
 
-/*
-==================================================
- TOAST
-==================================================
-*/
-
-function toast(message) {
-
-    const el =
-        document.getElementById("toast");
-
-    el.textContent = message;
-
-    el.classList.add("show");
-
-    setTimeout(() => {
-
-        el.classList.remove("show");
-
-    }, 2200);
-}
-
-/*
-==================================================
- FILE UPLOAD
-==================================================
-*/
-
 const fileInput =
-    document.getElementById("fileInput");
+    document.getElementById(
+        "fileInput"
+    );
 
 const fileName =
-    document.getElementById("fileName");
+    document.getElementById(
+        "fileName"
+    );
 
 const scriptName =
-    document.getElementById("scriptName");
+    document.getElementById(
+        "scriptName"
+    );
 
 const scriptSource =
-    document.getElementById("scriptSource");
+    document.getElementById(
+        "scriptSource"
+    );
+
 
 fileInput.addEventListener(
     "change",
     function() {
 
-        const file = this.files[0];
+        const file =
+            this.files[0];
 
-        if (!file) {
-            return;
-        }
+        if (!file) return;
 
         const filename =
             file.name.toLowerCase();
@@ -1187,7 +1869,7 @@ fileInput.addEventListener(
             !filename.endsWith(".txt")
         ) {
 
-            toast(
+            alert(
                 "Only .lua or .txt files are allowed!"
             );
 
@@ -1201,8 +1883,8 @@ fileInput.addEventListener(
             10 * 1024 * 1024
         ) {
 
-            toast(
-                "File is too large! Max 10MB."
+            alert(
+                "Maximum file size is 10MB."
             );
 
             this.value = "";
@@ -1213,55 +1895,28 @@ fileInput.addEventListener(
         fileName.textContent =
             file.name;
 
-        /*
-        Remove extension
-        */
-
-        const cleanName =
+        scriptName.value =
             file.name.replace(
                 /\.(lua|txt)$/i,
                 ""
             );
 
-        scriptName.value =
-            cleanName;
-
-        /*
-        Read file
-        */
-
         const reader =
             new FileReader();
 
-        reader.onload = function(event) {
+        reader.onload =
+            function(event) {
 
-            scriptSource.value =
-                event.target.result;
+                scriptSource.value =
+                    event.target.result;
 
-            toast(
-                "File loaded into source!"
-            );
-
-        };
-
-        reader.onerror = function() {
-
-            toast(
-                "Failed to read file!"
-            );
-
-        };
+            };
 
         reader.readAsText(file);
 
     }
 );
 
-/*
-==================================================
- MENU
-==================================================
-*/
 
 function toggleMenu(id) {
 
@@ -1269,7 +1924,9 @@ function toggleMenu(id) {
         .querySelectorAll(".menu")
         .forEach(menu => {
 
-            menu.classList.remove("show");
+            menu.classList.remove(
+                "show"
+            );
 
         });
 
@@ -1279,9 +1936,14 @@ function toggleMenu(id) {
         );
 
     if (menu) {
-        menu.classList.toggle("show");
+
+        menu.classList.toggle(
+            "show"
+        );
+
     }
 }
+
 
 document.addEventListener(
     "click",
@@ -1308,11 +1970,6 @@ document.addEventListener(
     }
 );
 
-/*
-==================================================
- UPLOAD
-==================================================
-*/
 
 async function uploadScript() {
 
@@ -1324,7 +1981,7 @@ async function uploadScript() {
 
     if (!name) {
 
-        toast(
+        alert(
             "Enter script name!"
         );
 
@@ -1333,7 +1990,7 @@ async function uploadScript() {
 
     if (!source.trim()) {
 
-        toast(
+        alert(
             "Enter Lua source!"
         );
 
@@ -1346,6 +2003,7 @@ async function uploadScript() {
             await fetch(
                 "/api/scripts",
                 {
+
                     method: "POST",
 
                     headers: {
@@ -1353,10 +2011,12 @@ async function uploadScript() {
                             "application/json"
                     },
 
-                    body: JSON.stringify({
-                        name,
-                        source
-                    })
+                    body:
+                        JSON.stringify({
+                            name,
+                            source
+                        })
+
                 }
             );
 
@@ -1365,57 +2025,9 @@ async function uploadScript() {
 
         if (!response.ok) {
 
-            toast(
+            alert(
                 data.error ||
                 "Upload failed"
-            );
-
-            return;
-        }
-
-        toast(
-            "Script protected!"
-        );
-
-        setTimeout(() => {
-
-            location.reload();
-
-        }, 600);
-
-    } catch (error) {
-
-        toast(
-            "Server error!"
-        );
-
-    }
-}
-
-/*
-==================================================
- TOGGLE
-==================================================
-*/
-
-async function toggleScript(id) {
-
-    try {
-
-        const response =
-            await fetch(
-                "/api/scripts/" +
-                id +
-                "/toggle",
-                {
-                    method: "POST"
-                }
-            );
-
-        if (!response.ok) {
-
-            toast(
-                "Failed to change status"
             );
 
             return;
@@ -1425,18 +2037,39 @@ async function toggleScript(id) {
 
     } catch {
 
-        toast(
+        alert(
             "Server error!"
         );
 
     }
 }
 
-/*
-==================================================
- DELETE
-==================================================
-*/
+
+async function toggleScript(id) {
+
+    const response =
+        await fetch(
+            "/api/scripts/" +
+            id +
+            "/toggle",
+            {
+                method: "POST"
+            }
+        );
+
+    if (response.ok) {
+
+        location.reload();
+
+    } else {
+
+        alert(
+            "Failed to change status"
+        );
+
+    }
+}
+
 
 async function deleteScript(id) {
 
@@ -1448,55 +2081,45 @@ async function deleteScript(id) {
         return;
     }
 
-    try {
-
-        const response =
-            await fetch(
-                "/api/scripts/" + id,
-                {
-                    method: "DELETE"
-                }
-            );
-
-        if (!response.ok) {
-
-            toast(
-                "Delete failed"
-            );
-
-            return;
-        }
-
-        toast(
-            "Script deleted!"
+    const response =
+        await fetch(
+            "/api/scripts/" +
+            id,
+            {
+                method: "DELETE"
+            }
         );
 
-        setTimeout(() => {
+    if (response.ok) {
 
-            location.reload();
+        location.reload();
 
-        }, 500);
+    } else {
 
-    } catch {
-
-        toast(
-            "Server error!"
+        alert(
+            "Delete failed"
         );
 
     }
 }
 
-/*
-==================================================
- COPY LOADER
-==================================================
-*/
 
 async function copyLoader(url) {
 
+    /*
+    Dashboard menerima URL halaman loader,
+    kemudian kita ubah menjadi endpoint execute.
+    */
+
+    const executeURL =
+        url.replace(
+            "/files/loaders/",
+            "/api/execute/"
+        );
+
     const loader =
         'loadstring(game:HttpGet("' +
-        url +
+        executeURL +
         '"))()';
 
     try {
@@ -1505,17 +2128,27 @@ async function copyLoader(url) {
             loader
         );
 
-        toast(
+        alert(
             "Loader copied!"
         );
 
     } catch {
 
-        toast(
+        alert(
             "Failed to copy loader"
         );
 
     }
+}
+
+
+function openLoader(url) {
+
+    window.open(
+        url,
+        "_blank"
+    );
+
 }
 
 </script>
@@ -1526,9 +2159,10 @@ async function copyLoader(url) {
 `);
 });
 
+
 /*
 ==================================================
- START SERVER
+ START
 ==================================================
 */
 
