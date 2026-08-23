@@ -4,24 +4,19 @@ const path = require("path");
 const crypto = require("crypto");
 
 const app = express();
-
 const PORT = process.env.PORT || 3000;
 
 const DATA_DIR = path.join(__dirname, "data");
 const SCRIPTS_DIR = path.join(DATA_DIR, "scripts");
 const DB_FILE = path.join(DATA_DIR, "scripts.json");
 
-for (const dir of [DATA_DIR, SCRIPTS_DIR]) {
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-}
+fs.mkdirSync(SCRIPTS_DIR, { recursive: true });
 
 if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify([], null, 2));
+    fs.writeFileSync(DB_FILE, "[]", "utf8");
 }
 
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "15mb" }));
 
 function readDB() {
     try {
@@ -39,8 +34,8 @@ function generateId() {
     return crypto.randomBytes(16).toString("hex");
 }
 
-function escapeHtml(str) {
-    return String(str)
+function escapeHtml(value) {
+    return String(value)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -48,13 +43,21 @@ function escapeHtml(str) {
         .replace(/'/g, "&#039;");
 }
 
+function getBaseUrl(req) {
+    const protocol =
+        req.headers["x-forwarded-proto"] ||
+        req.protocol ||
+        "https";
+
+    return `${protocol}://${req.get("host")}`;
+}
+
 /*
 ==================================================
- API
+ API - LIST
 ==================================================
 */
 
-// List scripts
 app.get("/api/scripts", (req, res) => {
     const db = readDB();
 
@@ -68,7 +71,12 @@ app.get("/api/scripts", (req, res) => {
     );
 });
 
-// Upload script
+/*
+==================================================
+ API - UPLOAD SOURCE
+==================================================
+*/
+
 app.post("/api/scripts", (req, res) => {
     const { name, source } = req.body;
 
@@ -84,8 +92,13 @@ app.post("/api/scripts", (req, res) => {
         });
     }
 
-    const id = generateId();
+    if (source.length > 10 * 1024 * 1024) {
+        return res.status(413).json({
+            error: "File too large"
+        });
+    }
 
+    const id = generateId();
     const filename = `${id}.lua`;
     const filepath = path.join(SCRIPTS_DIR, filename);
 
@@ -100,7 +113,9 @@ app.post("/api/scripts", (req, res) => {
     };
 
     const db = readDB();
+
     db.push(script);
+
     writeDB(db);
 
     res.json({
@@ -111,15 +126,22 @@ app.post("/api/scripts", (req, res) => {
             enabled: script.enabled,
             createdAt: script.createdAt
         },
-        loader: `${getBaseUrl(req)}/files/loaders/${id}.lua`
+        loader:
+            `${getBaseUrl(req)}/files/loaders/${id}.lua`
     });
 });
 
-// Enable / Disable
+/*
+==================================================
+ API - TOGGLE
+==================================================
+*/
+
 app.post("/api/scripts/:id/toggle", (req, res) => {
     const db = readDB();
 
-    const script = db.find(x => x.id === req.params.id);
+    const script =
+        db.find(x => x.id === req.params.id);
 
     if (!script) {
         return res.status(404).json({
@@ -137,11 +159,17 @@ app.post("/api/scripts/:id/toggle", (req, res) => {
     });
 });
 
-// Delete
+/*
+==================================================
+ API - DELETE
+==================================================
+*/
+
 app.delete("/api/scripts/:id", (req, res) => {
     const db = readDB();
 
-    const index = db.findIndex(x => x.id === req.params.id);
+    const index =
+        db.findIndex(x => x.id === req.params.id);
 
     if (index === -1) {
         return res.status(404).json({
@@ -151,13 +179,15 @@ app.delete("/api/scripts/:id", (req, res) => {
 
     const script = db[index];
 
-    const filepath = path.join(SCRIPTS_DIR, script.filename);
+    const filepath =
+        path.join(SCRIPTS_DIR, script.filename);
 
     if (fs.existsSync(filepath)) {
         fs.unlinkSync(filepath);
     }
 
     db.splice(index, 1);
+
     writeDB(db);
 
     res.json({
@@ -174,60 +204,77 @@ app.delete("/api/scripts/:id", (req, res) => {
 app.get("/api/payload/:id", (req, res) => {
     const db = readDB();
 
-    const script = db.find(x => x.id === req.params.id);
+    const script =
+        db.find(x => x.id === req.params.id);
 
     if (!script) {
-        return res.status(404).send("-- Script not found");
+        return res
+            .status(404)
+            .type("text/plain")
+            .send("-- Script not found");
     }
 
     if (!script.enabled) {
-        return res.status(403).send("-- Script disabled");
+        return res
+            .status(403)
+            .type("text/plain")
+            .send("-- Script disabled");
     }
 
-    const filepath = path.join(SCRIPTS_DIR, script.filename);
+    const filepath =
+        path.join(SCRIPTS_DIR, script.filename);
 
     if (!fs.existsSync(filepath)) {
-        return res.status(404).send("-- Source missing");
+        return res
+            .status(404)
+            .type("text/plain")
+            .send("-- Source missing");
     }
 
-    const source = fs.readFileSync(filepath, "utf8");
+    const source =
+        fs.readFileSync(filepath, "utf8");
 
-    res.type("text/plain");
-    res.send(source);
+    res
+        .type("text/plain")
+        .set("Cache-Control", "no-store")
+        .send(source);
 });
 
 /*
 ==================================================
- LUA LOADER
+ LOADER
 ==================================================
 */
 
 app.get("/files/loaders/:id.lua", (req, res) => {
     const db = readDB();
 
-    const script = db.find(x => x.id === req.params.id);
+    const script =
+        db.find(x => x.id === req.params.id);
 
     if (!script) {
-        return res.status(404).type("text/plain").send(
-            'warn("SpideyProtect: Script not found")'
-        );
+        return res
+            .status(404)
+            .type("text/plain")
+            .send(
+                'warn("SpideyProtect: Script not found")'
+            );
     }
 
     if (!script.enabled) {
-        return res.status(403).type("text/plain").send(
-            'warn("SpideyProtect: Script disabled")'
-        );
+        return res
+            .status(403)
+            .type("text/plain")
+            .send(
+                'warn("SpideyProtect: Script disabled")'
+            );
     }
 
-    const base = getBaseUrl(req);
-    const payloadURL = `${base}/api/payload/${script.id}`;
+    const payloadURL =
+        `${getBaseUrl(req)}/api/payload/${script.id}`;
 
-    const loader = `
---[[
-    SpideyProtect
-    Protected Loader
-    Script: ${script.name.replace(/]/g, "")}
-]]
+    const loader = `-- SpideyProtect
+-- Protected Loader
 
 local URL = ${JSON.stringify(payloadURL)}
 
@@ -256,19 +303,18 @@ local ok, runtimeError = pcall(execute)
 
 if not ok then
     warn("SpideyProtect: Runtime error:", runtimeError)
-end
-`;
+end`;
 
     res
         .status(200)
         .type("text/plain")
         .set("Cache-Control", "no-store")
-        .send(loader.trim());
+        .send(loader);
 });
 
 /*
 ==================================================
- FRONTEND
+ WEB PANEL
 ==================================================
 */
 
@@ -276,56 +322,96 @@ app.get("/", (req, res) => {
     const db = readDB();
 
     const cards = db.map(script => {
-        const loader = `${getBaseUrl(req)}/files/loaders/${script.id}.lua`;
+        const loader =
+            `${getBaseUrl(req)}/files/loaders/${script.id}.lua`;
 
         return `
-        <div class="script-card">
-            <div class="script-info">
-                <div class="script-icon">🕷️</div>
+<div class="script-card">
 
-                <div>
-                    <div class="script-name">
-                        ${escapeHtml(script.name)}
-                    </div>
+    <div class="script-info">
 
-                    <div class="script-status ${script.enabled ? "on" : "off"}">
-                        ${script.enabled ? "● Enabled" : "● Disabled"}
-                    </div>
-                </div>
-            </div>
-
-            <div class="script-menu">
-                <button class="dots" onclick="toggleMenu('${script.id}')">
-                    ⋮
-                </button>
-
-                <div class="menu" id="menu-${script.id}">
-                    <button onclick="copyLoader('${loader}')">
-                        📋 Copy Loader
-                    </button>
-
-                    <button onclick="toggleScript('${script.id}')">
-                        ${script.enabled ? "⏸ Disable" : "▶ Enable"}
-                    </button>
-
-                    <button class="delete" onclick="deleteScript('${script.id}')">
-                        🗑 Delete
-                    </button>
-                </div>
-            </div>
+        <div class="script-icon">
+            🕷️
         </div>
-        `;
+
+        <div>
+
+            <div class="script-name">
+                ${escapeHtml(script.name)}
+            </div>
+
+            <div class="script-status ${
+                script.enabled ? "on" : "off"
+            }">
+                ${
+                    script.enabled
+                        ? "● Enabled"
+                        : "● Disabled"
+                }
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="script-menu">
+
+        <button
+            class="dots"
+            onclick="toggleMenu('${script.id}')"
+        >
+            ⋮
+        </button>
+
+        <div
+            class="menu"
+            id="menu-${script.id}"
+        >
+
+            <button
+                onclick='copyLoader(${JSON.stringify(loader)})'
+            >
+                📋 Copy Loader
+            </button>
+
+            <button
+                onclick="toggleScript('${script.id}')"
+            >
+                ${
+                    script.enabled
+                        ? "⏸ Disable"
+                        : "▶ Enable"
+                }
+            </button>
+
+            <button
+                class="delete"
+                onclick="deleteScript('${script.id}')"
+            >
+                🗑 Delete
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+`;
     }).join("");
 
     res.send(`
 <!DOCTYPE html>
+
 <html lang="en">
+
 <head>
 
 <meta charset="UTF-8">
 
-<meta name="viewport"
-content="width=device-width, initial-scale=1.0">
+<meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+>
 
 <title>SpideyProtect</title>
 
@@ -338,190 +424,298 @@ content="width=device-width, initial-scale=1.0">
 }
 
 body {
-    font-family:
-        Inter,
-        Arial,
-        sans-serif;
 
     min-height: 100vh;
 
-    color: #fff;
+    font-family:
+        Arial,
+        Helvetica,
+        sans-serif;
+
+    color: white;
 
     background:
+
         radial-gradient(
-            circle at top left,
-            rgba(255, 0, 0, .25),
-            transparent 35%
-        ),
-        radial-gradient(
-            circle at bottom right,
-            rgba(255, 255, 255, .08),
+            circle at 10% 0%,
+            rgba(255,0,0,.30),
             transparent 30%
         ),
+
+        radial-gradient(
+            circle at 90% 100%,
+            rgba(255,255,255,.08),
+            transparent 30%
+        ),
+
         #070707;
 }
 
 .header {
-    width: 100%;
-    border-bottom: 1px solid rgba(255,255,255,.1);
+
+    padding: 20px 30px;
+
+    display: flex;
+    align-items: center;
+
+    border-bottom:
+        1px solid rgba(255,255,255,.1);
 
     background:
         linear-gradient(
             90deg,
             #8b0000,
-            #e00000,
+            #df0000,
             #090909
         );
-
-    padding: 22px 30px;
-
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
 }
 
 .brand {
+
     display: flex;
     align-items: center;
+
     gap: 12px;
 }
 
 .logo {
-    width: 45px;
-    height: 45px;
 
-    border-radius: 13px;
+    width: 46px;
+    height: 46px;
 
     display: flex;
     align-items: center;
     justify-content: center;
 
-    font-size: 25px;
+    border-radius: 13px;
 
-    background: #fff;
+    background: white;
+
     color: #c00000;
+
+    font-size: 25px;
 
     box-shadow:
         0 0 25px rgba(255,0,0,.35);
 }
 
 .brand h1 {
+
     font-size: 23px;
     font-weight: 800;
 }
 
 .brand span {
+
     display: block;
 
-    font-size: 11px;
-    color: rgba(255,255,255,.65);
+    margin-top: 3px;
 
-    margin-top: 2px;
+    font-size: 11px;
+
+    color:
+        rgba(255,255,255,.65);
 }
 
 .container {
-    width: min(1100px, calc(100% - 30px));
+
+    width:
+        min(1100px, calc(100% - 30px));
 
     margin: 35px auto;
 }
 
 .hero {
-    background:
-        linear-gradient(
-            135deg,
-            rgba(255,0,0,.18),
-            rgba(255,255,255,.03)
-        );
+
+    padding: 28px;
+
+    border-radius: 20px;
 
     border:
         1px solid rgba(255,255,255,.1);
 
-    border-radius: 20px;
-
-    padding: 28px;
-
-    margin-bottom: 25px;
+    background:
+        linear-gradient(
+            135deg,
+            rgba(255,0,0,.16),
+            rgba(255,255,255,.03)
+        );
 
     box-shadow:
-        0 15px 50px rgba(0,0,0,.3);
+        0 15px 50px rgba(0,0,0,.35);
 }
 
 .hero h2 {
+
     font-size: 27px;
+
     margin-bottom: 8px;
 }
 
 .hero p {
+
     color: #aaa;
+
     font-size: 14px;
 }
 
-.upload {
+.form-grid {
+
     margin-top: 22px;
 
     display: grid;
-    grid-template-columns: 1fr 2fr auto;
 
-    gap: 10px;
+    grid-template-columns:
+        1fr 1fr;
+
+    gap: 12px;
 }
 
 input,
 textarea {
+
     width: 100%;
+
+    outline: none;
 
     border:
         1px solid rgba(255,255,255,.12);
 
-    outline: none;
+    border-radius: 11px;
+
+    background: #101010;
 
     color: white;
-
-    background: #111;
-
-    border-radius: 11px;
 
     padding: 13px;
 
     font-family: inherit;
 }
 
+input:focus,
+textarea:focus {
+
+    border-color:
+        rgba(255,0,0,.55);
+}
+
 textarea {
-    min-height: 100px;
+
+    min-height: 180px;
+
     resize: vertical;
+
+    grid-column:
+        1 / -1;
 }
 
-button {
-    border: none;
-    cursor: pointer;
-    font-family: inherit;
+.file-row {
+
+    grid-column:
+        1 / -1;
+
+    display: flex;
+
+    gap: 10px;
+
+    align-items: center;
 }
 
-.upload button {
+.file-label {
+
+    display: inline-flex;
+
+    align-items: center;
+    justify-content: center;
+
+    gap: 8px;
+
+    padding: 12px 18px;
+
     border-radius: 11px;
 
-    padding: 0 22px;
+    cursor: pointer;
+
+    background: white;
+
+    color: #a00000;
+
+    font-size: 13px;
 
     font-weight: 800;
-
-    background: #fff;
-    color: #a00000;
 
     transition: .2s;
 }
 
-.upload button:hover {
-    transform: translateY(-2px);
+.file-label:hover {
+
+    transform:
+        translateY(-2px);
 
     box-shadow:
-        0 8px 25px rgba(255,255,255,.15);
+        0 8px 25px
+        rgba(255,255,255,.12);
 }
 
-.source-box {
-    grid-column: 1 / -1;
+.file-name {
+
+    color: #888;
+
+    font-size: 12px;
+
+    overflow: hidden;
+
+    text-overflow: ellipsis;
+
+    white-space: nowrap;
+}
+
+#fileInput {
+
+    display: none;
+}
+
+.upload-button {
+
+    grid-column:
+        1 / -1;
+
+    width: 100%;
+
+    padding: 14px;
+
+    border-radius: 11px;
+
+    background:
+        linear-gradient(
+            90deg,
+            #d40000,
+            #ff2020
+        );
+
+    color: white;
+
+    font-weight: 800;
+
+    font-size: 14px;
+
+    transition: .2s;
+}
+
+.upload-button:hover {
+
+    transform:
+        translateY(-2px);
+
+    box-shadow:
+        0 8px 25px
+        rgba(255,0,0,.2);
 }
 
 .section-title {
-    margin: 25px 0 12px;
+
+    margin:
+        25px 0 12px;
 
     font-size: 15px;
 
@@ -529,21 +723,27 @@ button {
 }
 
 .scripts {
+
     display: grid;
 
     grid-template-columns:
-        repeat(auto-fit, minmax(300px, 1fr));
+        repeat(
+            auto-fit,
+            minmax(300px, 1fr)
+        );
 
     gap: 15px;
 }
 
 .script-card {
+
     position: relative;
 
     display: flex;
 
-    justify-content: space-between;
     align-items: center;
+
+    justify-content: space-between;
 
     padding: 18px;
 
@@ -563,13 +763,16 @@ button {
 }
 
 .script-card:hover {
+
+    transform:
+        translateY(-2px);
+
     border-color:
         rgba(255,0,0,.35);
-
-    transform: translateY(-2px);
 }
 
 .script-info {
+
     display: flex;
 
     align-items: center;
@@ -578,15 +781,16 @@ button {
 }
 
 .script-icon {
+
     width: 45px;
     height: 45px;
 
-    border-radius: 12px;
-
     display: flex;
 
-    justify-content: center;
     align-items: center;
+    justify-content: center;
+
+    border-radius: 12px;
 
     background:
         linear-gradient(
@@ -599,17 +803,22 @@ button {
 }
 
 .script-name {
-    font-size: 15px;
-    font-weight: 700;
 
     max-width: 200px;
 
     overflow: hidden;
+
     text-overflow: ellipsis;
+
     white-space: nowrap;
+
+    font-size: 15px;
+
+    font-weight: 700;
 }
 
 .script-status {
+
     margin-top: 4px;
 
     font-size: 11px;
@@ -628,40 +837,49 @@ button {
 }
 
 .dots {
+
     width: 38px;
     height: 38px;
+
+    border: none;
 
     border-radius: 10px;
 
     background: #1c1c1c;
+
     color: white;
 
     font-size: 23px;
+
+    cursor: pointer;
 }
 
 .menu {
+
     display: none;
 
     position: absolute;
 
+    z-index: 100;
+
     right: 0;
+
     top: 45px;
 
-    width: 170px;
+    width: 175px;
 
-    z-index: 100;
+    padding: 6px;
+
+    border-radius: 12px;
 
     background: #161616;
 
     border:
         1px solid rgba(255,255,255,.1);
 
-    border-radius: 12px;
-
-    padding: 6px;
-
     box-shadow:
-        0 15px 40px rgba(0,0,0,.6);
+        0 15px 40px
+        rgba(0,0,0,.6);
 }
 
 .menu.show {
@@ -669,16 +887,22 @@ button {
 }
 
 .menu button {
+
     width: 100%;
 
     padding: 10px;
 
+    border: none;
+
     border-radius: 8px;
 
     background: transparent;
+
     color: #eee;
 
     text-align: left;
+
+    cursor: pointer;
 }
 
 .menu button:hover {
@@ -690,51 +914,56 @@ button {
 }
 
 .empty {
-    text-align: center;
 
     padding: 50px;
 
-    border-radius: 18px;
-
-    border:
-        1px dashed rgba(255,255,255,.12);
+    text-align: center;
 
     color: #666;
+
+    border:
+        1px dashed
+        rgba(255,255,255,.12);
+
+    border-radius: 18px;
 }
 
 .toast {
+
     position: fixed;
 
-    bottom: 25px;
     left: 50%;
+    bottom: 25px;
 
-    transform:
-        translateX(-50%)
-        translateY(80px);
+    z-index: 999;
 
-    padding: 13px 20px;
+    padding:
+        13px 20px;
 
     border-radius: 12px;
 
-    background: #fff;
+    background: white;
+
     color: #111;
 
     font-size: 13px;
+
     font-weight: 700;
 
     opacity: 0;
 
-    transition: .25s;
+    transform:
+        translate(-50%, 80px);
 
-    z-index: 999;
+    transition: .25s;
 }
 
 .toast.show {
+
     opacity: 1;
 
     transform:
-        translateX(-50%)
-        translateY(0);
+        translate(-50%, 0);
 }
 
 @media(max-width:700px) {
@@ -744,22 +973,44 @@ button {
     }
 
     .container {
-        width: calc(100% - 20px);
+
+        width:
+            calc(100% - 20px);
+
         margin-top: 20px;
-    }
-
-    .upload {
-        grid-template-columns: 1fr;
-    }
-
-    .upload button {
-        padding: 13px;
     }
 
     .hero {
         padding: 20px;
     }
 
+    .form-grid {
+
+        grid-template-columns:
+            1fr;
+    }
+
+    textarea {
+
+        grid-column:
+            auto;
+    }
+
+    .file-row {
+
+        grid-column:
+            auto;
+
+        flex-direction: column;
+
+        align-items: stretch;
+    }
+
+    .upload-button {
+
+        grid-column:
+            auto;
+    }
 }
 
 </style>
@@ -777,8 +1028,15 @@ button {
         </div>
 
         <div>
-            <h1>SpideyProtect</h1>
-            <span>Lua Protection System</span>
+
+            <h1>
+                SpideyProtect
+            </h1>
+
+            <span>
+                Lua Protection System
+            </span>
+
         </div>
 
     </div>
@@ -787,61 +1045,95 @@ button {
 
 <main class="container">
 
-    <section class="hero">
+<section class="hero">
 
-        <h2>Protect Your Scripts 🕷️</h2>
+    <h2>
+        Protect Your Scripts 🕷️
+    </h2>
 
-        <p>
-            Upload your Lua script and generate a protected loader.
-        </p>
+    <p>
+        Upload a Lua/TXT file or paste your source manually.
+    </p>
 
-        <div class="upload">
+    <div class="form-grid">
+
+        <input
+            id="scriptName"
+            placeholder="Script name..."
+        >
+
+        <div class="file-row">
+
+            <label
+                class="file-label"
+                for="fileInput"
+            >
+                📁 Upload File
+            </label>
 
             <input
-                id="scriptName"
-                placeholder="Script name..."
+                id="fileInput"
+                type="file"
+                accept=".lua,.txt,text/plain"
             >
 
-            <button onclick="uploadScript()">
-                + Add Script
-            </button>
-
-            <div></div>
-
-            <div class="source-box">
-
-                <textarea
-                    id="scriptSource"
-                    placeholder="Paste your Lua source here..."
-                ></textarea>
-
-            </div>
+            <span
+                class="file-name"
+                id="fileName"
+            >
+                No file selected
+            </span>
 
         </div>
 
-    </section>
+        <textarea
+            id="scriptSource"
+            placeholder="Paste your Lua source here..."
+        ></textarea>
 
-    <div class="section-title">
-        Your Scripts
+        <button
+            class="upload-button"
+            onclick="uploadScript()"
+        >
+            🕷️ Protect & Upload
+        </button>
+
     </div>
 
-    <section class="scripts">
+</section>
 
-        ${
-            cards ||
-            `<div class="empty">
-                🕷️ No scripts yet.<br>
-                Upload your first Lua script above.
-            </div>`
-        }
+<div class="section-title">
+    Your Scripts
+</div>
 
-    </section>
+<section class="scripts">
+
+${
+    cards ||
+    `
+    <div class="empty">
+        🕷️ No scripts yet.<br>
+        Upload your first Lua script above.
+    </div>
+    `
+}
+
+</section>
 
 </main>
 
-<div id="toast" class="toast"></div>
+<div
+    id="toast"
+    class="toast"
+></div>
 
 <script>
+
+/*
+==================================================
+ TOAST
+==================================================
+*/
 
 function toast(message) {
 
@@ -853,98 +1145,258 @@ function toast(message) {
     el.classList.add("show");
 
     setTimeout(() => {
+
         el.classList.remove("show");
+
     }, 2200);
 }
+
+/*
+==================================================
+ FILE UPLOAD
+==================================================
+*/
+
+const fileInput =
+    document.getElementById("fileInput");
+
+const fileName =
+    document.getElementById("fileName");
+
+const scriptName =
+    document.getElementById("scriptName");
+
+const scriptSource =
+    document.getElementById("scriptSource");
+
+fileInput.addEventListener(
+    "change",
+    function() {
+
+        const file = this.files[0];
+
+        if (!file) {
+            return;
+        }
+
+        const filename =
+            file.name.toLowerCase();
+
+        if (
+            !filename.endsWith(".lua") &&
+            !filename.endsWith(".txt")
+        ) {
+
+            toast(
+                "Only .lua or .txt files are allowed!"
+            );
+
+            this.value = "";
+
+            return;
+        }
+
+        if (
+            file.size >
+            10 * 1024 * 1024
+        ) {
+
+            toast(
+                "File is too large! Max 10MB."
+            );
+
+            this.value = "";
+
+            return;
+        }
+
+        fileName.textContent =
+            file.name;
+
+        /*
+        Remove extension
+        */
+
+        const cleanName =
+            file.name.replace(
+                /\.(lua|txt)$/i,
+                ""
+            );
+
+        scriptName.value =
+            cleanName;
+
+        /*
+        Read file
+        */
+
+        const reader =
+            new FileReader();
+
+        reader.onload = function(event) {
+
+            scriptSource.value =
+                event.target.result;
+
+            toast(
+                "File loaded into source!"
+            );
+
+        };
+
+        reader.onerror = function() {
+
+            toast(
+                "Failed to read file!"
+            );
+
+        };
+
+        reader.readAsText(file);
+
+    }
+);
+
+/*
+==================================================
+ MENU
+==================================================
+*/
 
 function toggleMenu(id) {
 
     document
         .querySelectorAll(".menu")
-        .forEach(x => x.classList.remove("show"));
+        .forEach(menu => {
+
+            menu.classList.remove("show");
+
+        });
 
     const menu =
-        document.getElementById("menu-" + id);
+        document.getElementById(
+            "menu-" + id
+        );
 
     if (menu) {
         menu.classList.toggle("show");
     }
 }
 
-document.addEventListener("click", e => {
+document.addEventListener(
+    "click",
+    function(event) {
 
-    if (
-        !e.target.closest(".script-menu")
-    ) {
-        document
-            .querySelectorAll(".menu")
-            .forEach(x =>
-                x.classList.remove("show")
-            );
+        if (
+            !event.target.closest(
+                ".script-menu"
+            )
+        ) {
+
+            document
+                .querySelectorAll(".menu")
+                .forEach(menu => {
+
+                    menu.classList.remove(
+                        "show"
+                    );
+
+                });
+
+        }
+
     }
+);
 
-});
+/*
+==================================================
+ UPLOAD
+==================================================
+*/
 
 async function uploadScript() {
 
     const name =
-        document
-            .getElementById("scriptName")
-            .value
-            .trim();
+        scriptName.value.trim();
 
     const source =
-        document
-            .getElementById("scriptSource")
-            .value;
+        scriptSource.value;
 
     if (!name) {
-        toast("Enter script name!");
+
+        toast(
+            "Enter script name!"
+        );
+
         return;
     }
 
     if (!source.trim()) {
-        toast("Enter Lua source!");
+
+        toast(
+            "Enter Lua source!"
+        );
+
         return;
     }
 
     try {
 
         const response =
-            await fetch("/api/scripts", {
-                method: "POST",
+            await fetch(
+                "/api/scripts",
+                {
+                    method: "POST",
 
-                headers: {
-                    "Content-Type":
-                        "application/json"
-                },
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
 
-                body: JSON.stringify({
-                    name,
-                    source
-                })
-            });
+                    body: JSON.stringify({
+                        name,
+                        source
+                    })
+                }
+            );
 
         const data =
             await response.json();
 
         if (!response.ok) {
-            toast(data.error || "Upload failed");
+
+            toast(
+                data.error ||
+                "Upload failed"
+            );
+
             return;
         }
 
-        toast("Script uploaded!");
+        toast(
+            "Script protected!"
+        );
 
         setTimeout(() => {
+
             location.reload();
-        }, 500);
 
-    } catch (err) {
+        }, 600);
 
-        toast("Server error");
+    } catch (error) {
+
+        toast(
+            "Server error!"
+        );
 
     }
 }
+
+/*
+==================================================
+ TOGGLE
+==================================================
+*/
 
 async function toggleScript(id) {
 
@@ -961,7 +1413,11 @@ async function toggleScript(id) {
             );
 
         if (!response.ok) {
-            toast("Failed");
+
+            toast(
+                "Failed to change status"
+            );
+
             return;
         }
 
@@ -969,10 +1425,18 @@ async function toggleScript(id) {
 
     } catch {
 
-        toast("Server error");
+        toast(
+            "Server error!"
+        );
 
     }
 }
+
+/*
+==================================================
+ DELETE
+==================================================
+*/
 
 async function deleteScript(id) {
 
@@ -995,38 +1459,61 @@ async function deleteScript(id) {
             );
 
         if (!response.ok) {
-            toast("Delete failed");
+
+            toast(
+                "Delete failed"
+            );
+
             return;
         }
 
-        toast("Script deleted!");
+        toast(
+            "Script deleted!"
+        );
 
         setTimeout(() => {
+
             location.reload();
+
         }, 500);
 
     } catch {
 
-        toast("Server error");
+        toast(
+            "Server error!"
+        );
 
     }
 }
 
+/*
+==================================================
+ COPY LOADER
+==================================================
+*/
+
 async function copyLoader(url) {
+
+    const loader =
+        'loadstring(game:HttpGet("' +
+        url +
+        '"))()';
 
     try {
 
         await navigator.clipboard.writeText(
-            'loadstring(game:HttpGet("' +
-            url +
-            '"))()'
+            loader
         );
 
-        toast("Loader copied!");
+        toast(
+            "Loader copied!"
+        );
 
     } catch {
 
-        toast("Failed to copy");
+        toast(
+            "Failed to copy loader"
+        );
 
     }
 }
@@ -1034,49 +1521,21 @@ async function copyLoader(url) {
 </script>
 
 </body>
+
 </html>
 `);
 });
 
 /*
 ==================================================
- HELPERS
-==================================================
-*/
-
-function getBaseUrl(req) {
-
-    const forwarded =
-        req.headers["x-forwarded-proto"];
-
-    const protocol =
-        forwarded ||
-        req.protocol ||
-        "https";
-
-    return (
-        protocol +
-        "://" +
-        req.get("host")
-    );
-}
-
-/*
-==================================================
- START
+ START SERVER
 ==================================================
 */
 
 app.listen(PORT, () => {
 
-    console.log(`
-╔══════════════════════════════════╗
-║          SpideyProtect           ║
-║       Lua Protection Server      ║
-╠══════════════════════════════════╣
-║ Port: ${PORT}
-║ Status: Online
-╚══════════════════════════════════╝
-`);
+    console.log(
+        `SpideyProtect running on port ${PORT}`
+    );
 
 });
