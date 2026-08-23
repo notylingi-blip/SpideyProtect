@@ -2,6 +2,8 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const session = require("express-session");
+const axios = require("axios");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,64 +15,263 @@ const DB_FILE = path.join(DATA_DIR, "scripts.json");
 fs.mkdirSync(SCRIPTS_DIR, { recursive: true });
 
 if (!fs.existsSync(DB_FILE)) {
-fs.writeFileSync(DB_FILE, "[]", "utf8");
+  fs.writeFileSync(DB_FILE, "[]", "utf8");
 }
 
 app.use(express.json({ limit: "15mb" }));
 
+app.use(session({
+  secret: process.env.SESSION_SECRET || "spideyprotect-secret-key-ganti-ini",
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: false,
+    maxAge: 7 * 24 * 60 * 60 * 1000
+  }
+}));
+
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || "1540862780545179698";
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || "GANTI_DENGAN_CLIENT_SECRET_BARU";
+const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || "http://localhost:3000/auth/discord/callback";
+
 function readDB() {
-try {
-return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
-} catch {
-return [];
-}
+  try {
+    return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+  } catch {
+    return [];
+  }
 }
 
 function writeDB(data) {
-fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 }
 
 function generateId() {
-return crypto.randomBytes(16).toString("hex");
+  return crypto.randomBytes(16).toString("hex");
 }
 
 function escapeHtml(value) {
-return String(value)
-.replace(/&/g, "&amp;")
-.replace(/</g, "&lt;")
-.replace(/>/g, "&gt;")
-.replace(/"/g, "&quot;")
-.replace(/'/g, "&#39;");
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function getBaseUrl(req) {
-const protocol =
-req.headers["x-forwarded-proto"] ||
-req.protocol ||
-"https";
+  const protocol =
+    req.headers["x-forwarded-proto"] ||
+    req.protocol ||
+    "https";
+  return `${protocol}://${req.get("host")}`;
+}
 
-return `${protocol}://${req.get("host")}`;
-
+function requireAuth(req, res, next) {
+  if (!req.session || !req.session.user) {
+    return res.redirect("/login");
+  }
+  next();
 }
 
 /*
 
-API - LIST SCRIPTS
+AUTH - LOGIN PAGE
 
 */
 
-app.get("/api/scripts", (req, res) => {
-const db = readDB();
+app.get("/login", (req, res) => {
+  if (req.session && req.session.user) {
+    return res.redirect("/");
+  }
 
-res.json(
-    db.map(script => ({
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>SpideyProtect - Login</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  min-height: 100vh;
+  font-family: Arial, Helvetica, sans-serif;
+  color: white;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(255,0,0,.28), transparent 30%),
+    radial-gradient(circle at 90% 100%, rgba(0,110,255,.22), transparent 35%),
+    #050505;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.card {
+  width: 100%;
+  max-width: 400px;
+  padding: 40px 30px;
+  border-radius: 20px;
+  border: 1px solid rgba(90,150,255,.18);
+  background: linear-gradient(145deg, rgba(8,31,57,.92), rgba(4,15,28,.95));
+  box-shadow: 0 25px 70px rgba(0,0,0,.4);
+  text-align: center;
+}
+.logo {
+  width: 70px;
+  height: 70px;
+  margin: 0 auto 16px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  background: linear-gradient(135deg, #ffffff, #dce9ff);
+  color: #d40000;
+  box-shadow: 0 0 35px rgba(0,110,255,.25), 0 0 25px rgba(255,0,0,.18);
+}
+h1 { font-size: 26px; font-weight: 850; margin-bottom: 6px; }
+p { color: rgba(255,255,255,.55); font-size: 13px; margin-bottom: 30px; }
+.discord-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 20px;
+  border: none;
+  border-radius: 12px;
+  background: #5865F2;
+  color: white;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform .2s, filter .2s;
+}
+.discord-btn:hover { transform: translateY(-2px); filter: brightness(1.1); }
+.discord-btn svg { width: 22px; height: 22px; fill: white; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">🕷️</div>
+  <h1>SpideyProtect</h1>
+  <p>Login dengan Discord untuk melindungi script Lua kamu.</p>
+  <a class="discord-btn" href="/auth/discord">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.056a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+    </svg>
+    Login dengan Discord
+  </a>
+</div>
+</body>
+</html>`);
+});
+
+/*
+
+AUTH - REDIRECT KE DISCORD
+
+*/
+
+app.get("/auth/discord", (req, res) => {
+  const params = new URLSearchParams({
+    client_id: DISCORD_CLIENT_ID,
+    redirect_uri: DISCORD_REDIRECT_URI,
+    response_type: "code",
+    scope: "identify"
+  });
+  res.redirect(`https://discord.com/api/oauth2/authorize?${params}`);
+});
+
+/*
+
+AUTH - CALLBACK DARI DISCORD
+
+*/
+
+app.get("/auth/discord/callback", async (req, res) => {
+  const { code } = req.query;
+
+  if (!code) {
+    return res.redirect("/login");
+  }
+
+  try {
+
+    const tokenRes = await axios.post(
+      "https://discord.com/api/oauth2/token",
+      new URLSearchParams({
+        client_id: DISCORD_CLIENT_ID,
+        client_secret: DISCORD_CLIENT_SECRET,
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: DISCORD_REDIRECT_URI
+      }),
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded"
+        }
+      }
+    );
+
+    const { access_token } = tokenRes.data;
+
+    const userRes = await axios.get("https://discord.com/api/users/@me", {
+      headers: {
+        Authorization: `Bearer ${access_token}`
+      }
+    });
+
+    const discordUser = userRes.data;
+
+    req.session.user = {
+      id: discordUser.id,
+      username: discordUser.username,
+      avatar: discordUser.avatar
+        ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
+        : `https://cdn.discordapp.com/embed/avatars/0.png`
+    };
+
+    res.redirect("/");
+
+  } catch (err) {
+    console.error("Discord OAuth error:", err?.response?.data || err.message);
+    res.redirect("/login?error=1");
+  }
+});
+
+/*
+
+AUTH - LOGOUT
+
+*/
+
+app.get("/logout", (req, res) => {
+  req.session.destroy(() => {
+    res.redirect("/login");
+  });
+});
+
+/*
+
+API - LIST SCRIPTS (hanya punya user sendiri)
+
+*/
+
+app.get("/api/scripts", requireAuth, (req, res) => {
+  const db = readDB();
+  const userId = req.session.user.id;
+
+  res.json(
+    db
+      .filter(script => script.ownerId === userId)
+      .map(script => ({
         id: script.id,
         name: script.name,
         enabled: script.enabled,
         createdAt: script.createdAt
-    }))
-);
-
+      }))
+  );
 });
 
 /*
@@ -79,266 +280,188 @@ API - UPLOAD SCRIPT
 
 */
 
-app.post("/api/scripts", (req, res) => {
-const { name, source } = req.body;
+app.post("/api/scripts", requireAuth, (req, res) => {
+  const { name, source } = req.body;
 
-if (!name || typeof name !== "string") {
-    return res.status(400).json({
-        error: "Script name is required"
-    });
-}
+  if (!name || typeof name !== "string") {
+    return res.status(400).json({ error: "Script name is required" });
+  }
 
-if (!source || typeof source !== "string") {
-    return res.status(400).json({
-        error: "Lua source is required"
-    });
-}
+  if (!source || typeof source !== "string") {
+    return res.status(400).json({ error: "Lua source is required" });
+  }
 
-if (source.length > 10 * 1024 * 1024) {
-    return res.status(413).json({
-        error: "File too large. Maximum 10MB."
-    });
-}
+  if (source.length > 10 * 1024 * 1024) {
+    return res.status(413).json({ error: "File too large. Maximum 10MB." });
+  }
 
-const id = generateId();
+  const id = generateId();
+  const filename = `${id}.lua`;
+  const filepath = path.join(SCRIPTS_DIR, filename);
 
-const filename = `${id}.lua`;
-const filepath = path.join(
-    SCRIPTS_DIR,
-    filename
-);
+  fs.writeFileSync(filepath, source, "utf8");
 
-fs.writeFileSync(
-    filepath,
-    source,
-    "utf8"
-);
-
-const script = {
+  const script = {
     id,
     name: name.trim().slice(0, 100),
     filename,
     enabled: true,
+    ownerId: req.session.user.id,
+    ownerUsername: req.session.user.username,
     createdAt: new Date().toISOString()
-};
+  };
 
-const db = readDB();
+  const db = readDB();
+  db.push(script);
+  writeDB(db);
 
-db.push(script);
+  const loaderPage = `${getBaseUrl(req)}/files/loaders/${id}.lua`;
+  const executeLoader = `${getBaseUrl(req)}/api/execute/${id}`;
 
-writeDB(db);
-
-const loaderPage =
-    `${getBaseUrl(req)}/files/loaders/${id}.lua`;
-
-const executeLoader =
-    `${getBaseUrl(req)}/api/execute/${id}`;
-
-res.json({
+  res.json({
     success: true,
-
     script: {
-        id: script.id,
-        name: script.name,
-        enabled: script.enabled,
-        createdAt: script.createdAt
+      id: script.id,
+      name: script.name,
+      enabled: script.enabled,
+      createdAt: script.createdAt
     },
-
     loader: loaderPage,
-
     executeLoader
-});
-
-});
-
-/*
-
-API - TOGGLE
-
-*/
-
-app.post("/api/scripts/:id/toggle", (req, res) => {
-const db = readDB();
-
-const script =
-    db.find(x => x.id === req.params.id);
-
-if (!script) {
-    return res.status(404).json({
-        error: "Script not found"
-    });
-}
-
-script.enabled = !script.enabled;
-
-writeDB(db);
-
-res.json({
-    success: true,
-    enabled: script.enabled
-});
-
+  });
 });
 
 /*
 
-API - DELETE
+API - TOGGLE (hanya owner)
 
 */
 
-app.delete("/api/scripts/:id", (req, res) => {
-const db = readDB();
+app.post("/api/scripts/:id/toggle", requireAuth, (req, res) => {
+  const db = readDB();
+  const userId = req.session.user.id;
 
-const index =
-    db.findIndex(
-        x => x.id === req.params.id
-    );
+  const script = db.find(x => x.id === req.params.id);
 
-if (index === -1) {
-    return res.status(404).json({
-        error: "Script not found"
-    });
-}
+  if (!script) {
+    return res.status(404).json({ error: "Script not found" });
+  }
 
-const script = db[index];
+  if (script.ownerId !== userId) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
 
-const filepath =
-    path.join(
-        SCRIPTS_DIR,
-        script.filename
-    );
+  script.enabled = !script.enabled;
+  writeDB(db);
 
-if (fs.existsSync(filepath)) {
+  res.json({ success: true, enabled: script.enabled });
+});
+
+/*
+
+API - DELETE (hanya owner)
+
+*/
+
+app.delete("/api/scripts/:id", requireAuth, (req, res) => {
+  const db = readDB();
+  const userId = req.session.user.id;
+
+  const index = db.findIndex(x => x.id === req.params.id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: "Script not found" });
+  }
+
+  if (db[index].ownerId !== userId) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const script = db[index];
+  const filepath = path.join(SCRIPTS_DIR, script.filename);
+
+  if (fs.existsSync(filepath)) {
     fs.unlinkSync(filepath);
-}
+  }
 
-db.splice(index, 1);
+  db.splice(index, 1);
+  writeDB(db);
 
-writeDB(db);
-
-res.json({
-    success: true
-});
-
+  res.json({ success: true });
 });
 
 /*
 
 API - EXECUTE (endpoint yang dipanggil loader di executor)
+Tidak butuh login karena dipanggil dari executor Roblox
 
 */
 
 app.get("/api/execute/:id", (req, res) => {
-const db = readDB();
+  const db = readDB();
+  const script = db.find(x => x.id === req.params.id);
 
-const script =
-    db.find(x => x.id === req.params.id);
-
-if (!script) {
+  if (!script) {
     return res
-        .status(404)
-        .type("text/plain")
-        .send("-- SpideyProtect: Script not found");
-}
+      .status(404)
+      .type("text/plain")
+      .send("-- SpideyProtect: Script not found");
+  }
 
-if (!script.enabled) {
+  if (!script.enabled) {
     return res
-        .status(403)
-        .type("text/plain")
-        .send("-- SpideyProtect: Script disabled");
-}
+      .status(403)
+      .type("text/plain")
+      .send("-- SpideyProtect: Script disabled");
+  }
 
-const filepath =
-    path.join(
-        SCRIPTS_DIR,
-        script.filename
-    );
+  const filepath = path.join(SCRIPTS_DIR, script.filename);
 
-if (!fs.existsSync(filepath)) {
+  if (!fs.existsSync(filepath)) {
     return res
-        .status(404)
-        .type("text/plain")
-        .send("-- SpideyProtect: Source missing");
-}
+      .status(404)
+      .type("text/plain")
+      .send("-- SpideyProtect: Source missing");
+  }
 
-const source =
-    fs.readFileSync(
-        filepath,
-        "utf8"
-    );
+  const source = fs.readFileSync(filepath, "utf8");
 
-res
+  res
     .status(200)
     .type("text/plain")
     .set("Cache-Control", "no-store")
     .send(source);
-
 });
 
 /*
 
 LOADER PAGE
 
-IMPORTANT:
-
-Opening:
-
-/files/loaders/ID.lua
-
-will show the SpideyProtect page
-instead of displaying the Lua source.
-
 */
 
 app.get("/files/loaders/:id.lua", (req, res) => {
-const db = readDB();
+  const db = readDB();
+  const script = db.find(x => x.id === req.params.id);
 
-const script =
-    db.find(x => x.id === req.params.id);
-
-if (!script) {
-    return res.status(404).send(`
-<!DOCTYPE html>
+  if (!script) {
+    return res.status(404).send(`<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport"
-content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SpideyProtect</title>
 </head>
-<body style="
-margin:0;
-background:#050b18;
-color:white;
-font-family:Arial;
-display:flex;
-align-items:center;
-justify-content:center;
-min-height:100vh;
-">
-<h2>
-SpideyProtect: Script not found
-</h2>
+<body style="margin:0;background:#050b18;color:white;font-family:Arial;display:flex;align-items:center;justify-content:center;min-height:100vh;">
+<h2>SpideyProtect: Script not found</h2>
 </body>
-</html>
-`);
-    }
+</html>`);
+  }
 
-const base =
-    getBaseUrl(req);
+  const base = getBaseUrl(req);
+  const executeURL = `${base}/api/execute/${script.id}`;
+  const loaderCode = `loadstring(game:HttpGet("${executeURL}"))()`;
 
-const executeURL =
-    `${base}/api/execute/${script.id}`;
-
-/*
-Loader yang disalin user.
-*/
-
-const loaderCode =
-    `loadstring(game:HttpGet("${executeURL}"))()`;
-
-res.status(200).send(`
-<!DOCTYPE html>
+  res.status(200).send(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -995,8 +1118,7 @@ async function copyLoader() {
 
 </script>
 </body>
-</html>
-`);
+</html>`);
 });
 
 /*
@@ -1005,22 +1127,26 @@ MAIN DASHBOARD
 
 */
 
-app.get("/", (req, res) => {
+app.get("/", requireAuth, (req, res) => {
 
-const db = readDB();
+  const db = readDB();
+  const userId = req.session.user.id;
+  const user = req.session.user;
 
-const cards = db.map(script => {
+  const cards = db
+    .filter(script => script.ownerId === userId)
+    .map(script => {
 
-    const loaderPage =
-        `${getBaseUrl(req)}/files/loaders/${script.id}.lua`;
+      const loaderPage =
+          `${getBaseUrl(req)}/files/loaders/${script.id}.lua`;
 
-    const executeURL =
-        `${getBaseUrl(req)}/api/execute/${script.id}`;
+      const executeURL =
+          `${getBaseUrl(req)}/api/execute/${script.id}`;
 
-    const loaderCode =
-        `loadstring(game:HttpGet("${executeURL}"))()`;
+      const loaderCode =
+          `loadstring(game:HttpGet("${executeURL}"))()`;
 
-    return `
+      return `
 <div class="script-card">
 <div class="script-info">
 
@@ -1101,10 +1227,9 @@ const cards = db.map(script => {
 
 </div>
 `;
-}).join("");
+    }).join("");
 
-res.send(`
-<!DOCTYPE html>
+  res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -1158,6 +1283,8 @@ body {
     display: flex;
 
     align-items: center;
+
+    justify-content: space-between;
 
     border-bottom:
         1px solid
@@ -1223,6 +1350,61 @@ body {
         rgba(255,255,255,.65);
 
     font-size: 11px;
+}
+
+.user-info {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 10px;
+}
+
+.user-avatar {
+
+    width: 36px;
+
+    height: 36px;
+
+    border-radius: 50%;
+
+    border: 2px solid rgba(255,255,255,.3);
+}
+
+.user-name {
+
+    font-size: 13px;
+
+    font-weight: 700;
+
+    color: white;
+}
+
+.logout-btn {
+
+    padding: 7px 14px;
+
+    border: 1px solid rgba(255,255,255,.2);
+
+    border-radius: 8px;
+
+    background: transparent;
+
+    color: rgba(255,255,255,.7);
+
+    font-size: 12px;
+
+    cursor: pointer;
+
+    text-decoration: none;
+
+    transition: background .2s;
+}
+
+.logout-btn:hover {
+
+    background: rgba(255,255,255,.1);
 }
 
 .container {
@@ -1606,6 +1788,10 @@ textarea {
         padding: 18px;
     }
 
+    .user-name {
+        display: none;
+    }
+
     .container {
 
         width:
@@ -1665,6 +1851,17 @@ textarea {
 </div>
 
 </div>
+
+<div class="user-info">
+    <img
+        class="user-avatar"
+        src="${escapeHtml(user.avatar)}"
+        alt="avatar"
+    >
+    <span class="user-name">${escapeHtml(user.username)}</span>
+    <a class="logout-btn" href="/logout">Logout</a>
+</div>
+
 </header>
 <main class="container">
 <section class="hero">
@@ -2037,8 +2234,7 @@ function openLoader(url) {
 
 </script>
 </body>
-</html>
-`);
+</html>`);
 });
 
 /*
