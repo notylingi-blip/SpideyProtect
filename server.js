@@ -13,325 +13,271 @@ const DB_FILE = path.join(DATA_DIR, "scripts.json");
 fs.mkdirSync(SCRIPTS_DIR, { recursive: true });
 
 if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, "[]", "utf8");
+fs.writeFileSync(DB_FILE, "[]", "utf8");
 }
 
 app.use(express.json({ limit: "15mb" }));
 
 function readDB() {
-    try {
-        return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
-    } catch {
-        return [];
-    }
+try {
+return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+} catch {
+return [];
+}
 }
 
 function writeDB(data) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 }
 
 function generateId() {
-    return crypto.randomBytes(16).toString("hex");
+return crypto.randomBytes(16).toString("hex");
 }
 
 function escapeHtml(value) {
-    return String(value)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
+return String(value)
+.replace(/&/g, "&amp;")
+.replace(/</g, "&lt;")
+.replace(/>/g, "&gt;")
+.replace(/"/g, "&quot;")
+.replace(/'/g, "&#39;");
 }
 
 function getBaseUrl(req) {
-    const protocol =
-        req.headers["x-forwarded-proto"] ||
-        req.protocol ||
-        "https";
+const protocol =
+req.headers["x-forwarded-proto"] ||
+req.protocol ||
+"https";
 
-    return `${protocol}://${req.get("host")}`;
+return `${protocol}://${req.get("host")}`;
+
 }
 
 /*
-==================================================
- API - LIST SCRIPTS
-==================================================
+
+API - LIST SCRIPTS
+
 */
 
 app.get("/api/scripts", (req, res) => {
-    const db = readDB();
+const db = readDB();
 
-    res.json(
-        db.map(script => ({
-            id: script.id,
-            name: script.name,
-            enabled: script.enabled,
-            createdAt: script.createdAt
-        }))
-    );
+res.json(
+    db.map(script => ({
+        id: script.id,
+        name: script.name,
+        enabled: script.enabled,
+        createdAt: script.createdAt
+    }))
+);
+
 });
 
 /*
-==================================================
- API - UPLOAD SCRIPT
-==================================================
+
+API - UPLOAD SCRIPT
+
 */
 
 app.post("/api/scripts", (req, res) => {
-    const { name, source } = req.body;
+const { name, source } = req.body;
 
-    if (!name || typeof name !== "string") {
-        return res.status(400).json({
-            error: "Script name is required"
-        });
-    }
-
-    if (!source || typeof source !== "string") {
-        return res.status(400).json({
-            error: "Lua source is required"
-        });
-    }
-
-    if (source.length > 10 * 1024 * 1024) {
-        return res.status(413).json({
-            error: "File too large. Maximum 10MB."
-        });
-    }
-
-    const id = generateId();
-
-    const filename = `${id}.lua`;
-    const filepath = path.join(
-        SCRIPTS_DIR,
-        filename
-    );
-
-    fs.writeFileSync(
-        filepath,
-        source,
-        "utf8"
-    );
-
-    const script = {
-        id,
-        name: name.trim().slice(0, 100),
-        filename,
-        enabled: true,
-        createdAt: new Date().toISOString()
-    };
-
-    const db = readDB();
-
-    db.push(script);
-
-    writeDB(db);
-
-    const loaderPage =
-        `${getBaseUrl(req)}/files/loaders/${id}.lua`;
-
-    const executeLoader =
-        `${getBaseUrl(req)}/api/execute/${id}`;
-
-    res.json({
-        success: true,
-
-        script: {
-            id: script.id,
-            name: script.name,
-            enabled: script.enabled,
-            createdAt: script.createdAt
-        },
-
-        loader: loaderPage,
-
-        executeLoader
+if (!name || typeof name !== "string") {
+    return res.status(400).json({
+        error: "Script name is required"
     });
+}
+
+if (!source || typeof source !== "string") {
+    return res.status(400).json({
+        error: "Lua source is required"
+    });
+}
+
+if (source.length > 10 * 1024 * 1024) {
+    return res.status(413).json({
+        error: "File too large. Maximum 10MB."
+    });
+}
+
+const id = generateId();
+
+const filename = `${id}.lua`;
+const filepath = path.join(
+    SCRIPTS_DIR,
+    filename
+);
+
+fs.writeFileSync(
+    filepath,
+    source,
+    "utf8"
+);
+
+const script = {
+    id,
+    name: name.trim().slice(0, 100),
+    filename,
+    enabled: true,
+    createdAt: new Date().toISOString()
+};
+
+const db = readDB();
+
+db.push(script);
+
+writeDB(db);
+
+const loaderPage =
+    `${getBaseUrl(req)}/files/loaders/${id}.lua`;
+
+const executeLoader =
+    `${getBaseUrl(req)}/api/execute/${id}`;
+
+res.json({
+    success: true,
+
+    script: {
+        id: script.id,
+        name: script.name,
+        enabled: script.enabled,
+        createdAt: script.createdAt
+    },
+
+    loader: loaderPage,
+
+    executeLoader
+});
+
 });
 
 /*
-==================================================
- API - TOGGLE
-==================================================
+
+API - TOGGLE
+
 */
 
 app.post("/api/scripts/:id/toggle", (req, res) => {
-    const db = readDB();
+const db = readDB();
 
-    const script =
-        db.find(x => x.id === req.params.id);
+const script =
+    db.find(x => x.id === req.params.id);
 
-    if (!script) {
-        return res.status(404).json({
-            error: "Script not found"
-        });
-    }
-
-    script.enabled = !script.enabled;
-
-    writeDB(db);
-
-    res.json({
-        success: true,
-        enabled: script.enabled
+if (!script) {
+    return res.status(404).json({
+        error: "Script not found"
     });
+}
+
+script.enabled = !script.enabled;
+
+writeDB(db);
+
+res.json({
+    success: true,
+    enabled: script.enabled
+});
+
 });
 
 /*
-==================================================
- API - DELETE
-==================================================
+
+API - DELETE
+
 */
 
 app.delete("/api/scripts/:id", (req, res) => {
-    const db = readDB();
+const db = readDB();
 
-    const index =
-        db.findIndex(
-            x => x.id === req.params.id
-        );
+const index =
+    db.findIndex(
+        x => x.id === req.params.id
+    );
 
-    if (index === -1) {
-        return res.status(404).json({
-            error: "Script not found"
-        });
-    }
-
-    const script = db[index];
-
-    const filepath =
-        path.join(
-            SCRIPTS_DIR,
-            script.filename
-        );
-
-    if (fs.existsSync(filepath)) {
-        fs.unlinkSync(filepath);
-    }
-
-    db.splice(index, 1);
-
-    writeDB(db);
-
-    res.json({
-        success: true
+if (index === -1) {
+    return res.status(404).json({
+        error: "Script not found"
     });
+}
+
+const script = db[index];
+
+const filepath =
+    path.join(
+        SCRIPTS_DIR,
+        script.filename
+    );
+
+if (fs.existsSync(filepath)) {
+    fs.unlinkSync(filepath);
+}
+
+db.splice(index, 1);
+
+writeDB(db);
+
+res.json({
+    success: true
+});
+
 });
 
 /*
-==================================================
- API - PAYLOAD
-==================================================
-*/
 
-app.get("/api/payload/:id", (req, res) => {
-    const db = readDB();
+API - EXECUTE (endpoint yang dipanggil loader di executor)
 
-    const script =
-        db.find(x => x.id === req.params.id);
-
-    if (!script) {
-        return res
-            .status(404)
-            .type("text/plain")
-            .send("-- SpideyProtect: Script not found");
-    }
-
-    if (!script.enabled) {
-        return res
-            .status(403)
-            .type("text/plain")
-            .send("-- SpideyProtect: Script disabled");
-    }
-
-    const filepath =
-        path.join(
-            SCRIPTS_DIR,
-            script.filename
-        );
-
-    if (!fs.existsSync(filepath)) {
-        return res
-            .status(404)
-            .type("text/plain")
-            .send("-- SpideyProtect: Source missing");
-    }
-
-    const source =
-        fs.readFileSync(
-            filepath,
-            "utf8"
-        );
-
-    res
-        .status(200)
-        .type("text/plain")
-        .set("Cache-Control", "no-store")
-        .send(source);
-});
-
-/*
-==================================================
- EXECUTE LOADER ENDPOINT
-==================================================
-
-This is the endpoint used by the
-copied Lua loader.
-
-The browser-facing /files/loaders/:id.lua
-does NOT expose the source.
-==================================================
 */
 
 app.get("/api/execute/:id", (req, res) => {
-    const db = readDB();
+const db = readDB();
 
-    const script =
-        db.find(x => x.id === req.params.id);
+const script =
+    db.find(x => x.id === req.params.id);
 
-    if (!script) {
-        return res
-            .status(404)
-            .type("text/plain")
-            .send("-- SpideyProtect: Script not found");
-    }
-
-    if (!script.enabled) {
-        return res
-            .status(403)
-            .type("text/plain")
-            .send("-- SpideyProtect: Script disabled");
-    }
-
-    const filepath =
-        path.join(
-            SCRIPTS_DIR,
-            script.filename
-        );
-
-    if (!fs.existsSync(filepath)) {
-        return res
-            .status(404)
-            .type("text/plain")
-            .send("-- SpideyProtect: Source missing");
-    }
-
-    const source =
-        fs.readFileSync(
-            filepath,
-            "utf8"
-        );
-
-    res
-        .status(200)
+if (!script) {
+    return res
+        .status(404)
         .type("text/plain")
-        .set("Cache-Control", "no-store")
-        .send(source);
+        .send("-- SpideyProtect: Script not found");
+}
+
+if (!script.enabled) {
+    return res
+        .status(403)
+        .type("text/plain")
+        .send("-- SpideyProtect: Script disabled");
+}
+
+const filepath =
+    path.join(
+        SCRIPTS_DIR,
+        script.filename
+    );
+
+if (!fs.existsSync(filepath)) {
+    return res
+        .status(404)
+        .type("text/plain")
+        .send("-- SpideyProtect: Source missing");
+}
+
+const source =
+    fs.readFileSync(
+        filepath,
+        "utf8"
+    );
+
+res
+    .status(200)
+    .type("text/plain")
+    .set("Cache-Control", "no-store")
+    .send(source);
+
 });
 
 /*
-==================================================
- LOADER PAGE
-==================================================
+
+LOADER PAGE
 
 IMPORTANT:
 
@@ -341,17 +287,17 @@ Opening:
 
 will show the SpideyProtect page
 instead of displaying the Lua source.
-==================================================
+
 */
 
 app.get("/files/loaders/:id.lua", (req, res) => {
-    const db = readDB();
+const db = readDB();
 
-    const script =
-        db.find(x => x.id === req.params.id);
+const script =
+    db.find(x => x.id === req.params.id);
 
-    if (!script) {
-        return res.status(404).send(`
+if (!script) {
+    return res.status(404).send(`
 <!DOCTYPE html>
 <html>
 <head>
@@ -360,7 +306,6 @@ app.get("/files/loaders/:id.lua", (req, res) => {
 content="width=device-width,initial-scale=1">
 <title>SpideyProtect</title>
 </head>
-
 <body style="
 margin:0;
 background:#050b18;
@@ -371,47 +316,39 @@ align-items:center;
 justify-content:center;
 min-height:100vh;
 ">
-
 <h2>
 SpideyProtect: Script not found
 </h2>
-
 </body>
 </html>
 `);
     }
 
-    const base =
-        getBaseUrl(req);
+const base =
+    getBaseUrl(req);
 
-    const loaderURL =
-        `${base}/api/execute/${script.id}`;
+const executeURL =
+    `${base}/api/execute/${script.id}`;
 
-    /*
-    Loader yang disalin user.
-    */
+/*
+Loader yang disalin user.
+*/
 
-    const loaderCode =
-        `loadstring(game:HttpGet(${JSON.stringify(loaderURL)}))()`;
+const loaderCode =
+    `loadstring(game:HttpGet("${executeURL}"))()`;
 
-    res.status(200).send(`
+res.status(200).send(`
 <!DOCTYPE html>
-
 <html lang="en">
-
 <head>
-
 <meta charset="UTF-8">
-
 <meta
 name="viewport"
 content="width=device-width, initial-scale=1.0"
 >
-
 <title>
 SpideyProtect • ${escapeHtml(script.name)}
 </title>
-
 <style>
 
 * {
@@ -897,106 +834,100 @@ Horizontal scrollbar
 }
 
 </style>
-
 </head>
-
 <body>
-
 <div class="page">
+<div class="brand">
 
-    <div class="brand">
-
-        <div class="logo">
-            🕷️
-        </div>
-
-        <h1>
-            SpideyProtect
-        </h1>
-
-        <p>
-            Lua Protection System
-        </p>
-
-    </div>
-
-
-    <div class="card">
-
-        <div class="card-title">
-            This script can't be viewed in a browser
-        </div>
-
-        <div class="description">
-
-            For security, the source is only delivered
-            to the script at runtime.
-            Use the loader below in your script.
-
-        </div>
-
-        <div class="script-name">
-
-            SCRIPT:
-            <span>
-                ${escapeHtml(script.name)}
-            </span>
-
-        </div>
-
-
-        <div class="loader-title">
-            LOADER
-        </div>
-
-
-        <div class="loader-wrap">
-
-            <code
-                class="loader-code"
-                id="loaderCode"
-            >${escapeHtml(loaderCode)}</code>
-
-        </div>
-
-
-        <button
-            class="copy-button"
-            onclick="copyLoader()"
-        >
-            Copy loader
-        </button>
-
-
-        <div class="security">
-
-            🔒 <strong>
-                Source Protected
-            </strong>
-
-            <br>
-
-            The original source is not displayed
-            on this page.
-
-        </div>
-
-    </div>
-
-
-    <div class="footer">
-
-        Protected by
-        <b>
-            SpideyProtect
-        </b>
+    <div class="logo">
         🕷️
+    </div>
+
+    <h1>
+        SpideyProtect
+    </h1>
+
+    <p>
+        Lua Protection System
+    </p>
+
+</div>
+
+
+<div class="card">
+
+    <div class="card-title">
+        This script can't be viewed in a browser
+    </div>
+
+    <div class="description">
+
+        For security, the source is only delivered
+        to the script at runtime.
+        Use the loader below in your script.
+
+    </div>
+
+    <div class="script-name">
+
+        SCRIPT:
+        <span>
+            ${escapeHtml(script.name)}
+        </span>
+
+    </div>
+
+
+    <div class="loader-title">
+        LOADER
+    </div>
+
+
+    <div class="loader-wrap">
+
+        <code
+            class="loader-code"
+            id="loaderCode"
+        >${escapeHtml(loaderCode)}</code>
+
+    </div>
+
+
+    <button
+        class="copy-button"
+        onclick="copyLoader()"
+    >
+        Copy loader
+    </button>
+
+
+    <div class="security">
+
+        🔒 <strong>
+            Source Protected
+        </strong>
+
+        <br>
+
+        The original source is not displayed
+        on this page.
 
     </div>
 
 </div>
 
 
+<div class="footer">
+
+    Protected by
+    <b>
+        SpideyProtect
+    </b>
+    🕷️
+
+</div>
+
+</div>
 <script>
 
 const loader =
@@ -1063,131 +994,127 @@ async function copyLoader() {
 }
 
 </script>
-
 </body>
-
 </html>
 `);
 });
 
 /*
-==================================================
- MAIN DASHBOARD
-==================================================
+
+MAIN DASHBOARD
+
 */
 
 app.get("/", (req, res) => {
 
-    const db = readDB();
+const db = readDB();
 
-    const cards = db.map(script => {
+const cards = db.map(script => {
 
-        const loader =
-            `${getBaseUrl(req)}/files/loaders/${script.id}.lua`;
+    const loaderPage =
+        `${getBaseUrl(req)}/files/loaders/${script.id}.lua`;
 
-        return `
+    const executeURL =
+        `${getBaseUrl(req)}/api/execute/${script.id}`;
+
+    const loaderCode =
+        `loadstring(game:HttpGet("${executeURL}"))()`;
+
+    return `
 <div class="script-card">
+<div class="script-info">
 
-    <div class="script-info">
-
-        <div class="script-icon">
-            🕷️
-        </div>
-
-        <div>
-
-            <div class="script-name">
-                ${escapeHtml(script.name)}
-            </div>
-
-            <div class="script-status ${
-                script.enabled
-                    ? "on"
-                    : "off"
-            }">
-
-                ${
-                    script.enabled
-                        ? "● Enabled"
-                        : "● Disabled"
-                }
-
-            </div>
-
-        </div>
-
+    <div class="script-icon">
+        🕷️
     </div>
 
-    <div class="script-menu">
+    <div>
 
-        <button
-            class="dots"
-            onclick="toggleMenu('${script.id}')"
-        >
-            ⋮
-        </button>
+        <div class="script-name">
+            ${escapeHtml(script.name)}
+        </div>
 
-        <div
-            class="menu"
-            id="menu-${script.id}"
-        >
+        <div class="script-status ${
+            script.enabled
+                ? "on"
+                : "off"
+        }">
 
-            <button
-                onclick='openLoader(${JSON.stringify(loader)})'
-            >
-                🔗 Open Loader
-            </button>
-
-            <button
-                onclick='copyLoader(${JSON.stringify(loader)})'
-            >
-                📋 Copy Loader
-            </button>
-
-            <button
-                onclick="toggleScript('${script.id}')"
-            >
-                ${
-                    script.enabled
-                        ? "⏸ Disable"
-                        : "▶ Enable"
-                }
-            </button>
-
-            <button
-                class="delete"
-                onclick="deleteScript('${script.id}')"
-            >
-                🗑 Delete
-            </button>
+            ${
+                script.enabled
+                    ? "● Enabled"
+                    : "● Disabled"
+            }
 
         </div>
 
     </div>
 
 </div>
+
+<div class="script-menu">
+
+    <button
+        class="dots"
+        onclick="toggleMenu('${script.id}')"
+    >
+        ⋮
+    </button>
+
+    <div
+        class="menu"
+        id="menu-${script.id}"
+    >
+
+        <button
+            onclick='openLoader(${JSON.stringify(loaderPage)})'
+        >
+            🔗 Open Loader
+        </button>
+
+        <button
+            onclick='copyLoaderCode(${JSON.stringify(loaderCode)})'
+        >
+            📋 Copy Loader
+        </button>
+
+        <button
+            onclick="toggleScript('${script.id}')"
+        >
+            ${
+                script.enabled
+                    ? "⏸ Disable"
+                    : "▶ Enable"
+            }
+        </button>
+
+        <button
+            class="delete"
+            onclick="deleteScript('${script.id}')"
+        >
+            🗑 Delete
+        </button>
+
+    </div>
+
+</div>
+
+</div>
 `;
+}).join("");
 
-    }).join("");
-
-    res.send(`
+res.send(`
 <!DOCTYPE html>
-
 <html lang="en">
-
 <head>
-
 <meta charset="UTF-8">
-
 <meta
 name="viewport"
 content="width=device-width,initial-scale=1.0"
 >
-
 <title>
 SpideyProtect
 </title>
-
 <style>
 
 * {
@@ -1717,118 +1644,91 @@ textarea {
 }
 
 </style>
-
 </head>
-
 <body>
-
 <header class="header">
-
 <div class="brand">
+<div class="logo">
+    🕷️
+</div>
 
-    <div class="logo">
-        🕷️
-    </div>
+<div>
 
-    <div>
+    <h1>
+        SpideyProtect
+    </h1>
 
-        <h1>
-            SpideyProtect
-        </h1>
+    <span>
+        Lua Protection System
+    </span>
 
-        <span>
-            Lua Protection System
+</div>
+
+</div>
+</header>
+<main class="container">
+<section class="hero">
+<h2>
+    Protect Your Scripts 🕷️
+</h2>
+
+<p>
+    Upload a Lua/TXT file or paste your source manually.
+</p>
+
+<div class="form-grid">
+
+    <input
+        id="scriptName"
+        placeholder="Script name..."
+    >
+
+    <div class="file-row">
+
+        <label
+            class="file-label"
+            for="fileInput"
+        >
+            📁 Upload File
+        </label>
+
+        <input
+            id="fileInput"
+            type="file"
+            accept=".lua,.txt,text/plain"
+        >
+
+        <span
+            class="file-name"
+            id="fileName"
+        >
+            No file selected
         </span>
 
     </div>
 
+    <textarea
+        id="scriptSource"
+        placeholder="Paste your Lua source here..."
+    ></textarea>
+
+    <button
+        class="upload-button"
+        onclick="uploadScript()"
+    >
+        🕷️ Protect &amp; Upload
+    </button>
+
 </div>
 
-</header>
-
-
-<main class="container">
-
-<section class="hero">
-
-    <h2>
-        Protect Your Scripts 🕷️
-    </h2>
-
-    <p>
-        Upload a Lua/TXT file or paste your source manually.
-    </p>
-
-    <div class="form-grid">
-
-        <input
-            id="scriptName"
-            placeholder="Script name..."
-        >
-
-        <div class="file-row">
-
-            <label
-                class="file-label"
-                for="fileInput"
-            >
-                📁 Upload File
-            </label>
-
-            <input
-                id="fileInput"
-                type="file"
-                accept=".lua,.txt,text/plain"
-            >
-
-            <span
-                class="file-name"
-                id="fileName"
-            >
-                No file selected
-            </span>
-
-        </div>
-
-        <textarea
-            id="scriptSource"
-            placeholder="Paste your Lua source here..."
-        ></textarea>
-
-        <button
-            class="upload-button"
-            onclick="uploadScript()"
-        >
-            🕷️ Protect & Upload
-        </button>
-
-    </div>
-
 </section>
-
-
 <div class="section-title">
     Your Scripts
 </div>
-
-
 <section class="scripts">
-
-${
-    cards ||
-    `
-    <div class="empty">
-        🕷️ No scripts yet.<br>
-        Upload your first Lua script above.
-    </div>
-    `
-}
-
+${cards || `<div class="empty">🕷️ No scripts yet.<br>Upload your first Lua script above.</div>`}
 </section>
-
 </main>
-
-
 <script>
 
 const fileInput =
@@ -2104,28 +2004,12 @@ async function deleteScript(id) {
 }
 
 
-async function copyLoader(url) {
-
-    /*
-    Dashboard menerima URL halaman loader,
-    kemudian kita ubah menjadi endpoint execute.
-    */
-
-    const executeURL =
-        url.replace(
-            "/files/loaders/",
-            "/api/execute/"
-        );
-
-    const loader =
-        'loadstring(game:HttpGet("' +
-        executeURL +
-        '"))()';
+async function copyLoaderCode(loaderCode) {
 
     try {
 
         await navigator.clipboard.writeText(
-            loader
+            loaderCode
         );
 
         alert(
@@ -2152,24 +2036,21 @@ function openLoader(url) {
 }
 
 </script>
-
 </body>
-
 </html>
 `);
 });
 
-
 /*
-==================================================
- START
-==================================================
+
+START
+
 */
 
 app.listen(PORT, () => {
 
-    console.log(
-        `SpideyProtect running on port ${PORT}`
-    );
+console.log(
+    `SpideyProtect running on port ${PORT}`
+);
 
 });
