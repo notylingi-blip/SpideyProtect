@@ -109,27 +109,27 @@ function generateHwid(userId) {
 
 function hasPermission(member, guildId) {
   if (member.permissions.has(PermissionFlagsBits.Administrator)) return true;
-
   const cfg = readConfig();
   const roleId = cfg[guildId]?.whitelistRole;
-
   if (!roleId) return false;
-
   return member.roles.cache.has(roleId);
 }
 
 /*
 ==================================================
- AMBIL SCRIPT LIST DARI SPIDEYPROTECT
+ AMBIL SCRIPT MILIK USER TERTENTU DARI SERVER
+ - ownerId = Discord ID user
+ - Hanya return script yang dibuat oleh user itu
 ==================================================
 */
 
-async function getScripts() {
+async function getScriptsByOwner(ownerId) {
   try {
     const res = await axios.get(
       `${CONFIG.apiBase}/api/scripts/internal`,
       {
-        headers: { "x-api-secret": CONFIG.apiSecret }
+        headers: { "x-api-secret": CONFIG.apiSecret },
+        params: { ownerId }
       }
     );
     return res.data || [];
@@ -160,7 +160,7 @@ const client = new Client({
 const commands = [
   new SlashCommandBuilder()
     .setName("setuppanel")
-    .setDescription("Setup panel embed di channel ini")
+    .setDescription("Setup panel embed di channel ini (hanya script milikmu)")
     .addStringOption(opt =>
       opt.setName("title").setDescription("Judul embed").setRequired(true)
     )
@@ -178,7 +178,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("genkey")
-    .setDescription("Generate key baru")
+    .setDescription("Generate key untuk script milikmu")
     .addIntegerOption(opt =>
       opt.setName("days").setDescription("Durasi key dalam hari (0 = lifetime)").setRequired(true)
     )
@@ -188,7 +188,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("whitelist")
-    .setDescription("Langsung whitelist user tanpa key")
+    .setDescription("Langsung whitelist user ke script milikmu")
     .addUserOption(opt =>
       opt.setName("user").setDescription("User yang mau di-whitelist").setRequired(true)
     )
@@ -208,7 +208,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("listkeys")
-    .setDescription("Lihat semua key"),
+    .setDescription("Lihat semua key yang pernah kamu buat"),
 
   new SlashCommandBuilder()
     .setName("userinfo")
@@ -219,7 +219,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("deletescript")
-    .setDescription("Hapus script dari SpideyProtect")
+    .setDescription("Hapus script milikmu dari SpideyProtect")
 
 ].map(cmd => cmd.toJSON());
 
@@ -262,10 +262,7 @@ client.on("interactionCreate", async interaction => {
   ------------------------------------------------
   */
 
-  if (
-    interaction.isChatInputCommand() &&
-    interaction.commandName === "whitelistrole"
-  ) {
+  if (interaction.isChatInputCommand() && interaction.commandName === "whitelistrole") {
 
     if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
       return interaction.reply({ content: "❌ Hanya Administrator yang bisa set whitelistrole.", ephemeral: true });
@@ -273,7 +270,6 @@ client.on("interactionCreate", async interaction => {
 
     const role = interaction.options.getRole("role");
     const cfg = readConfig();
-
     if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
     cfg[interaction.guildId].whitelistRole = role.id;
     writeConfig(cfg);
@@ -287,16 +283,26 @@ client.on("interactionCreate", async interaction => {
   /*
   ------------------------------------------------
    /setuppanel
+   Panel hanya menampilkan script milik user yang
+   menjalankan command ini (berdasarkan Discord ID)
   ------------------------------------------------
   */
 
-  if (
-    interaction.isChatInputCommand() &&
-    interaction.commandName === "setuppanel"
-  ) {
+  if (interaction.isChatInputCommand() && interaction.commandName === "setuppanel") {
 
     if (!hasPermission(interaction.member, interaction.guildId)) {
       return interaction.reply({ content: "❌ Kamu tidak punya permission.", ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    // Fetch hanya script milik user ini
+    const myScripts = await getScriptsByOwner(interaction.user.id);
+
+    if (myScripts.length === 0) {
+      return interaction.editReply({
+        content: "❌ Kamu belum punya script di SpideyProtect. Login ke dashboard dulu dan upload script dengan akun Discord kamu."
+      });
     }
 
     const title = interaction.options.getString("title");
@@ -307,7 +313,7 @@ client.on("interactionCreate", async interaction => {
       .setDescription(description)
       .setColor(0x5865F2)
       .setFooter({
-        text: `Sent by ${interaction.user.username} • ${new Date().toLocaleString("en-US")}`
+        text: `Panel by ${interaction.user.username} • ${new Date().toLocaleString("en-US")}`
       });
 
     const row1 = new ActionRowBuilder().addComponents(
@@ -317,7 +323,8 @@ client.on("interactionCreate", async interaction => {
         .setEmoji("🔑")
         .setStyle(ButtonStyle.Success),
       new ButtonBuilder()
-        .setCustomId("get_script")
+        // Simpan ownerId di customId agar get_script tahu harus ambil script siapa
+        .setCustomId(`get_script:${interaction.user.id}`)
         .setLabel("Get Script")
         .setEmoji("📜")
         .setStyle(ButtonStyle.Primary)
@@ -349,80 +356,95 @@ client.on("interactionCreate", async interaction => {
       components: [row1, row2, row3]
     });
 
-    return interaction.reply({ content: "✅ Panel berhasil dibuat!", ephemeral: true });
+    return interaction.editReply({ content: "✅ Panel berhasil dibuat!" });
   }
 
   /*
   ------------------------------------------------
    /genkey
+   Saat genkey, admin pilih dari script miliknya
+   sendiri — user lain tidak bisa genkey untuk
+   script yang bukan miliknya
   ------------------------------------------------
   */
 
-  if (
-    interaction.isChatInputCommand() &&
-    interaction.commandName === "genkey"
-  ) {
+  if (interaction.isChatInputCommand() && interaction.commandName === "genkey") {
 
     if (!hasPermission(interaction.member, interaction.guildId)) {
       return interaction.reply({ content: "❌ Kamu tidak punya permission.", ephemeral: true });
     }
 
+    await interaction.deferReply({ ephemeral: true });
+
+    const myScripts = await getScriptsByOwner(interaction.user.id);
+
+    if (myScripts.length === 0) {
+      return interaction.editReply({
+        content: "❌ Kamu belum punya script di SpideyProtect. Login ke dashboard dengan akun Discord kamu dulu dan upload script."
+      });
+    }
+
     const days = interaction.options.getInteger("days");
     const amount = Math.min(interaction.options.getInteger("amount") || 1, 20);
 
-    const keys = readKeys();
-    const generated = [];
-
-    for (let i = 0; i < amount; i++) {
-      const key = generateKey();
-      const expiry = days === 0
-        ? null
-        : new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
-
-      keys.push({
-        key,
-        hwid: null,
-        userId: null,
-        username: null,
-        scriptId: null,
-        redeemedAt: null,
-        lastHwidReset: null,
-        expiry,
-        createdAt: new Date().toISOString(),
-        createdBy: interaction.user.id
-      });
-
-      generated.push(key);
+    // Kalau cuma 1 script, langsung generate tanpa perlu pilih
+    if (myScripts.length === 1) {
+      return doGenKey(interaction, myScripts[0].id, days, amount);
     }
 
-    writeKeys(keys);
+    // Kalau banyak script, suruh pilih dulu
+    const options = myScripts.slice(0, 25).map(s =>
+      new StringSelectMenuOptionBuilder()
+        .setLabel(s.name)
+        .setValue(s.id)
+        .setDescription(`Status: ${s.enabled ? "Enabled" : "Disabled"}`)
+    );
 
-    const duration = days === 0 ? "Lifetime" : `${days} hari`;
-    const keyList = generated.map(k => `\`${k}\``).join("\n");
+    const select = new StringSelectMenuBuilder()
+      .setCustomId(`genkey_select:${days}:${amount}`)
+      .setPlaceholder("Pilih script...")
+      .addOptions(options);
 
-    const embed = new EmbedBuilder()
-      .setTitle("🔑 Key Generated")
-      .setDescription(keyList)
-      .addFields(
-        { name: "Durasi", value: duration, inline: true },
-        { name: "Jumlah", value: `${generated.length}`, inline: true }
-      )
-      .setColor(0x57F287)
-      .setTimestamp();
+    return interaction.editReply({
+      content: "Pilih script yang mau digenerate keynya:",
+      components: [new ActionRowBuilder().addComponents(select)]
+    });
+  }
 
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+  /*
+  ------------------------------------------------
+   SELECT MENU: genkey_select
+  ------------------------------------------------
+  */
+
+  if (interaction.isStringSelectMenu() && interaction.customId.startsWith("genkey_select:")) {
+
+    await interaction.deferUpdate();
+
+    const parts = interaction.customId.split(":");
+    const days = parseInt(parts[1]);
+    const amount = parseInt(parts[2]);
+    const scriptId = interaction.values[0];
+
+    // Verifikasi script ini memang milik user yang select
+    const myScripts = await getScriptsByOwner(interaction.user.id);
+    const owned = myScripts.find(s => s.id === scriptId);
+
+    if (!owned) {
+      return interaction.editReply({ content: "❌ Script itu bukan milikmu.", components: [] });
+    }
+
+    return doGenKey(interaction, scriptId, days, amount);
   }
 
   /*
   ------------------------------------------------
    /whitelist
+   Admin whitelist user ke script miliknya sendiri
   ------------------------------------------------
   */
 
-  if (
-    interaction.isChatInputCommand() &&
-    interaction.commandName === "whitelist"
-  ) {
+  if (interaction.isChatInputCommand() && interaction.commandName === "whitelist") {
 
     if (!hasPermission(interaction.member, interaction.guildId)) {
       return interaction.reply({ content: "❌ Kamu tidak punya permission.", ephemeral: true });
@@ -433,28 +455,30 @@ client.on("interactionCreate", async interaction => {
     const targetUser = interaction.options.getUser("user");
     const days = interaction.options.getInteger("days");
 
-    const scripts = await getScripts();
+    // Hanya tampilkan script milik admin yang menjalankan command ini
+    const myScripts = await getScriptsByOwner(interaction.user.id);
 
-    if (scripts.length === 0) {
-      return interaction.editReply({ content: "❌ Belum ada script di SpideyProtect. Upload dulu di dashboard." });
+    if (myScripts.length === 0) {
+      return interaction.editReply({
+        content: "❌ Kamu belum punya script di SpideyProtect. Login ke dashboard dengan akun Discord kamu dulu."
+      });
     }
 
-    const options = scripts.slice(0, 25).map(s =>
+    const options = myScripts.slice(0, 25).map(s =>
       new StringSelectMenuOptionBuilder()
         .setLabel(s.name)
         .setValue(s.id)
+        .setDescription(`Status: ${s.enabled ? "Enabled" : "Disabled"}`)
     );
 
     const select = new StringSelectMenuBuilder()
-      .setCustomId(`whitelist_script:${targetUser.id}:${days}`)
+      .setCustomId(`whitelist_script:${targetUser.id}:${days}:${interaction.user.id}`)
       .setPlaceholder("Pilih script...")
       .addOptions(options);
 
-    const row = new ActionRowBuilder().addComponents(select);
-
     return interaction.editReply({
-      content: `Pilih script untuk di-whitelist ke <@${targetUser.id}>:`,
-      components: [row]
+      content: `Pilih script milikmu untuk di-whitelist ke <@${targetUser.id}>:`,
+      components: [new ActionRowBuilder().addComponents(select)]
     });
   }
 
@@ -464,20 +488,28 @@ client.on("interactionCreate", async interaction => {
   ------------------------------------------------
   */
 
-  if (
-    interaction.isStringSelectMenu() &&
-    interaction.customId.startsWith("whitelist_script:")
-  ) {
+  if (interaction.isStringSelectMenu() && interaction.customId.startsWith("whitelist_script:")) {
 
     await interaction.deferReply({ ephemeral: true });
 
     const parts = interaction.customId.split(":");
     const targetUserId = parts[1];
     const days = parseInt(parts[2]);
+    const adminId = parts[3]; // Discord ID admin yang membuat whitelist
     const scriptId = interaction.values[0];
 
-    const keys = readKeys();
+    // Verifikasi script ini memang milik admin yang menjalankan whitelist
+    const myScripts = await getScriptsByOwner(adminId);
+    const owned = myScripts.find(s => s.id === scriptId);
 
+    if (!owned) {
+      return interaction.editReply({
+        content: "❌ Script itu bukan milikmu. Kamu tidak bisa whitelist user ke script orang lain.",
+        components: []
+      });
+    }
+
+    const keys = readKeys();
     const key = generateKey();
     const hwid = generateHwid(targetUserId);
     const expiry = days === 0
@@ -494,7 +526,7 @@ client.on("interactionCreate", async interaction => {
       lastHwidReset: null,
       expiry,
       createdAt: new Date().toISOString(),
-      createdBy: interaction.user.id,
+      createdBy: adminId,
       isWhitelisted: true
     });
 
@@ -506,6 +538,7 @@ client.on("interactionCreate", async interaction => {
       .setTitle("✅ User Berhasil Di-whitelist!")
       .addFields(
         { name: "User", value: `<@${targetUserId}>`, inline: true },
+        { name: "Script", value: owned.name, inline: true },
         { name: "Durasi", value: duration, inline: true },
         { name: "Key", value: `\`${key}\``, inline: false },
         { name: "HWID", value: `\`${hwid}\``, inline: false }
@@ -537,10 +570,7 @@ client.on("interactionCreate", async interaction => {
   ------------------------------------------------
   */
 
-  if (
-    interaction.isChatInputCommand() &&
-    interaction.commandName === "revoke"
-  ) {
+  if (interaction.isChatInputCommand() && interaction.commandName === "revoke") {
 
     if (!hasPermission(interaction.member, interaction.guildId)) {
       return interaction.reply({ content: "❌ Kamu tidak punya permission.", ephemeral: true });
@@ -553,20 +583,36 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({ content: "❌ Masukkan key atau user yang mau direvoke.", ephemeral: true });
     }
 
+    // Ambil script milik admin ini untuk validasi
+    const myScripts = await getScriptsByOwner(interaction.user.id);
+    const myScriptIds = new Set(myScripts.map(s => s.id));
+
     const keys = readKeys();
     let removed = 0;
 
     if (keyInput) {
       const index = keys.findIndex(k => k.key === keyInput);
       if (index !== -1) {
-        keys.splice(index, 1);
-        removed++;
+        const keyData = keys[index];
+        // Hanya bisa revoke key yang terikat ke script milik admin ini
+        // atau key yang dibuat oleh admin ini
+        if (keyData.createdBy === interaction.user.id || myScriptIds.has(keyData.scriptId)) {
+          keys.splice(index, 1);
+          removed++;
+        } else {
+          return interaction.reply({ content: "❌ Kamu tidak bisa merevoke key yang bukan milikmu.", ephemeral: true });
+        }
       }
     }
 
     if (targetUser) {
       const before = keys.length;
-      const filtered = keys.filter(k => k.userId !== targetUser.id);
+      // Hanya hapus key user yang terikat ke script admin ini atau dibuat oleh admin ini
+      const filtered = keys.filter(k => {
+        if (k.userId !== targetUser.id) return true;
+        const isMyKey = k.createdBy === interaction.user.id || myScriptIds.has(k.scriptId);
+        return !isMyKey;
+      });
       removed += before - filtered.length;
       keys.length = 0;
       keys.push(...filtered);
@@ -575,7 +621,7 @@ client.on("interactionCreate", async interaction => {
     writeKeys(keys);
 
     if (removed === 0) {
-      return interaction.reply({ content: "❌ Key atau user tidak ditemukan.", ephemeral: true });
+      return interaction.reply({ content: "❌ Key atau user tidak ditemukan, atau bukan milikmu.", ephemeral: true });
     }
 
     return interaction.reply({
@@ -587,22 +633,22 @@ client.on("interactionCreate", async interaction => {
   /*
   ------------------------------------------------
    /listkeys
+   Hanya tampilkan key yang dibuat oleh admin ini
   ------------------------------------------------
   */
 
-  if (
-    interaction.isChatInputCommand() &&
-    interaction.commandName === "listkeys"
-  ) {
+  if (interaction.isChatInputCommand() && interaction.commandName === "listkeys") {
 
     if (!hasPermission(interaction.member, interaction.guildId)) {
       return interaction.reply({ content: "❌ Kamu tidak punya permission.", ephemeral: true });
     }
 
-    const keys = readKeys();
+    const allKeys = readKeys();
+    // Filter hanya key yang dibuat oleh user ini
+    const keys = allKeys.filter(k => k.createdBy === interaction.user.id);
 
     if (keys.length === 0) {
-      return interaction.reply({ content: "Belum ada key.", ephemeral: true });
+      return interaction.reply({ content: "Belum ada key yang kamu buat.", ephemeral: true });
     }
 
     const lines = keys.map(k => {
@@ -628,7 +674,6 @@ client.on("interactionCreate", async interaction => {
     if (current) chunks.push(current);
 
     await interaction.reply({ content: chunks[0], ephemeral: true });
-
     for (let i = 1; i < chunks.length; i++) {
       await interaction.followUp({ content: chunks[i], ephemeral: true });
     }
@@ -642,22 +687,27 @@ client.on("interactionCreate", async interaction => {
   ------------------------------------------------
   */
 
-  if (
-    interaction.isChatInputCommand() &&
-    interaction.commandName === "userinfo"
-  ) {
+  if (interaction.isChatInputCommand() && interaction.commandName === "userinfo") {
 
     if (!hasPermission(interaction.member, interaction.guildId)) {
       return interaction.reply({ content: "❌ Kamu tidak punya permission.", ephemeral: true });
     }
 
     const targetUser = interaction.options.getUser("user");
-    const keys = readKeys();
-    const userKeys = keys.filter(k => k.userId === targetUser.id);
+    const allKeys = readKeys();
+
+    // Hanya tampilkan key yang dibuat oleh admin ini untuk user target
+    const myScripts = await getScriptsByOwner(interaction.user.id);
+    const myScriptIds = new Set(myScripts.map(s => s.id));
+
+    const userKeys = allKeys.filter(k =>
+      k.userId === targetUser.id &&
+      (k.createdBy === interaction.user.id || myScriptIds.has(k.scriptId))
+    );
 
     if (userKeys.length === 0) {
       return interaction.reply({
-        content: `❌ <@${targetUser.id}> tidak punya key/akses.`,
+        content: `❌ <@${targetUser.id}> tidak punya key/akses dari script milikmu.`,
         ephemeral: true
       });
     }
@@ -688,13 +738,12 @@ client.on("interactionCreate", async interaction => {
   /*
   ------------------------------------------------
    /deletescript
+   Hanya tampilkan & izinkan delete script milik
+   user yang menjalankan command ini
   ------------------------------------------------
   */
 
-  if (
-    interaction.isChatInputCommand() &&
-    interaction.commandName === "deletescript"
-  ) {
+  if (interaction.isChatInputCommand() && interaction.commandName === "deletescript") {
 
     if (!hasPermission(interaction.member, interaction.guildId)) {
       return interaction.reply({ content: "❌ Kamu tidak punya permission.", ephemeral: true });
@@ -702,13 +751,14 @@ client.on("interactionCreate", async interaction => {
 
     await interaction.deferReply({ ephemeral: true });
 
-    const scripts = await getScripts();
+    // Hanya ambil script milik user ini
+    const myScripts = await getScriptsByOwner(interaction.user.id);
 
-    if (scripts.length === 0) {
-      return interaction.editReply({ content: "❌ Belum ada script di SpideyProtect." });
+    if (myScripts.length === 0) {
+      return interaction.editReply({ content: "❌ Kamu belum punya script di SpideyProtect." });
     }
 
-    const options = scripts.slice(0, 25).map(s =>
+    const options = myScripts.slice(0, 25).map(s =>
       new StringSelectMenuOptionBuilder()
         .setLabel(s.name)
         .setValue(s.id)
@@ -716,15 +766,13 @@ client.on("interactionCreate", async interaction => {
     );
 
     const select = new StringSelectMenuBuilder()
-      .setCustomId("deletescript_select")
+      .setCustomId(`deletescript_select:${interaction.user.id}`)
       .setPlaceholder("Pilih script yang mau dihapus...")
       .addOptions(options);
 
-    const row = new ActionRowBuilder().addComponents(select);
-
     return interaction.editReply({
-      content: "⚠️ Pilih script yang mau dihapus. **Tindakan ini tidak bisa dibatalkan!**",
-      components: [row]
+      content: "⚠️ Pilih script milikmu yang mau dihapus. **Tindakan ini tidak bisa dibatalkan!**",
+      components: [new ActionRowBuilder().addComponents(select)]
     });
   }
 
@@ -734,19 +782,21 @@ client.on("interactionCreate", async interaction => {
   ------------------------------------------------
   */
 
-  if (
-    interaction.isStringSelectMenu() &&
-    interaction.customId === "deletescript_select"
-  ) {
+  if (interaction.isStringSelectMenu() && interaction.customId.startsWith("deletescript_select:")) {
 
     await interaction.deferReply({ ephemeral: true });
 
+    const ownerId = interaction.customId.split(":")[1];
     const scriptId = interaction.values[0];
 
-    // Konfirmasi dulu sebelum hapus
+    // Double-check: script ini harus milik user yang membuka select menu
+    if (ownerId !== interaction.user.id) {
+      return interaction.editReply({ content: "❌ Kamu tidak bisa menghapus script orang lain.", components: [] });
+    }
+
     const confirmRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`confirmdelete:${scriptId}`)
+        .setCustomId(`confirmdelete:${scriptId}:${ownerId}`)
         .setLabel("Ya, Hapus Script Ini")
         .setEmoji("🗑️")
         .setStyle(ButtonStyle.Danger),
@@ -769,10 +819,7 @@ client.on("interactionCreate", async interaction => {
   ------------------------------------------------
   */
 
-  if (
-    interaction.isButton() &&
-    interaction.customId.startsWith("confirmdelete:")
-  ) {
+  if (interaction.isButton() && interaction.customId.startsWith("confirmdelete:")) {
 
     if (!hasPermission(interaction.member, interaction.guildId)) {
       return interaction.reply({ content: "❌ Kamu tidak punya permission.", ephemeral: true });
@@ -780,13 +827,26 @@ client.on("interactionCreate", async interaction => {
 
     await interaction.deferUpdate();
 
-    const scriptId = interaction.customId.split(":")[1];
+    const parts = interaction.customId.split(":");
+    const scriptId = parts[1];
+    const ownerId = parts[2];
+
+    // Harus orang yang sama yang klik confirm
+    if (interaction.user.id !== ownerId) {
+      return interaction.editReply({
+        content: "❌ Kamu tidak bisa menghapus script orang lain.",
+        components: []
+      });
+    }
 
     try {
       const res = await axios.delete(
         `${CONFIG.apiBase}/api/scripts/internal/${scriptId}`,
         {
-          headers: { "x-api-secret": CONFIG.apiSecret }
+          headers: {
+            "x-api-secret": CONFIG.apiSecret,
+            "x-owner-id": ownerId  // Server akan verifikasi ownership
+          }
         }
       );
 
@@ -803,9 +863,10 @@ client.on("interactionCreate", async interaction => {
 
     } catch (err) {
       const status = err?.response?.status;
-      const msg = status === 404
-        ? "❌ Script tidak ditemukan."
-        : "❌ Gagal menghapus script. Coba lagi nanti.";
+      const msg =
+        status === 403 ? "❌ Script itu bukan milikmu." :
+        status === 404 ? "❌ Script tidak ditemukan." :
+        "❌ Gagal menghapus script. Coba lagi nanti.";
 
       return interaction.editReply({ content: msg, components: [] });
     }
@@ -818,10 +879,7 @@ client.on("interactionCreate", async interaction => {
   */
 
   if (interaction.isButton() && interaction.customId === "canceldelete") {
-    return interaction.update({
-      content: "✅ Penghapusan dibatalkan.",
-      components: []
-    });
+    return interaction.update({ content: "✅ Penghapusan dibatalkan.", components: [] });
   }
 
   /*
@@ -843,9 +901,7 @@ client.on("interactionCreate", async interaction => {
       .setStyle(TextInputStyle.Short)
       .setRequired(true);
 
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(keyInput)
-    );
+    modal.addComponents(new ActionRowBuilder().addComponents(keyInput));
 
     return interaction.showModal(modal);
   }
@@ -909,25 +965,33 @@ client.on("interactionCreate", async interaction => {
   /*
   ------------------------------------------------
    BUTTON: get_script
+   customId format: get_script:<panelOwnerId>
+   Kirim loader script milik panel owner ke DM user
   ------------------------------------------------
   */
 
-  if (interaction.isButton() && interaction.customId === "get_script") {
+  if (interaction.isButton() && interaction.customId.startsWith("get_script")) {
 
     await interaction.deferReply({ ephemeral: true });
+
+    // Ambil panel owner ID dari customId (format: get_script:OWNER_ID)
+    const panelOwnerId = interaction.customId.split(":")[1] || null;
 
     const keys = readKeys();
     const userId = interaction.user.id;
 
+    // Cari key aktif milik user ini
     const keyData = keys.find(k => {
       if (k.userId !== userId) return false;
       if (k.expiry && new Date(k.expiry) < new Date()) return false;
+      // Jika panel punya owner, pastikan key terikat ke script milik owner itu
+      if (panelOwnerId && k.createdBy && k.createdBy !== panelOwnerId) return false;
       return true;
     });
 
     if (!keyData) {
       return interaction.editReply({
-        content: "❌ Kamu belum punya key aktif. Redeem key dulu!"
+        content: "❌ Kamu belum punya key aktif untuk panel ini. Redeem key dulu!"
       });
     }
 
@@ -1000,7 +1064,6 @@ client.on("interactionCreate", async interaction => {
 
     const keys = readKeys();
     const userId = interaction.user.id;
-
     const keyData = keys.find(k => k.userId === userId);
 
     if (!keyData) {
@@ -1010,13 +1073,8 @@ client.on("interactionCreate", async interaction => {
     const now = Date.now();
     const cooldown = 24 * 60 * 60 * 1000;
 
-    if (
-      keyData.lastHwidReset &&
-      now - new Date(keyData.lastHwidReset).getTime() < cooldown
-    ) {
-      const nextReset = new Date(
-        new Date(keyData.lastHwidReset).getTime() + cooldown
-      );
+    if (keyData.lastHwidReset && now - new Date(keyData.lastHwidReset).getTime() < cooldown) {
+      const nextReset = new Date(new Date(keyData.lastHwidReset).getTime() + cooldown);
       return interaction.editReply({
         content: `❌ HWID reset cooldown belum selesai. Bisa reset lagi <t:${Math.floor(nextReset.getTime() / 1000)}:R>.`
       });
@@ -1043,7 +1101,6 @@ client.on("interactionCreate", async interaction => {
 
     const keys = readKeys();
     const userId = interaction.user.id;
-
     const userKeys = keys.filter(k => k.userId === userId);
 
     if (userKeys.length === 0) {
@@ -1077,6 +1134,56 @@ client.on("interactionCreate", async interaction => {
   }
 
 });
+
+/*
+==================================================
+ HELPER: Generate keys untuk script tertentu
+==================================================
+*/
+
+async function doGenKey(interaction, scriptId, days, amount) {
+  const keys = readKeys();
+  const generated = [];
+
+  for (let i = 0; i < amount; i++) {
+    const key = generateKey();
+    const expiry = days === 0
+      ? null
+      : new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+
+    keys.push({
+      key,
+      hwid: null,
+      userId: null,
+      username: null,
+      scriptId,
+      redeemedAt: null,
+      lastHwidReset: null,
+      expiry,
+      createdAt: new Date().toISOString(),
+      createdBy: interaction.user.id
+    });
+
+    generated.push(key);
+  }
+
+  writeKeys(keys);
+
+  const duration = days === 0 ? "Lifetime" : `${days} hari`;
+  const keyList = generated.map(k => `\`${k}\``).join("\n");
+
+  const embed = new EmbedBuilder()
+    .setTitle("🔑 Key Generated")
+    .setDescription(keyList)
+    .addFields(
+      { name: "Durasi", value: duration, inline: true },
+      { name: "Jumlah", value: `${generated.length}`, inline: true }
+    )
+    .setColor(0x57F287)
+    .setTimestamp();
+
+  return interaction.editReply({ embeds: [embed], components: [] });
+}
 
 /*
 ==================================================
