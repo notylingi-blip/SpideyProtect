@@ -78,17 +78,17 @@ async function getScriptsByOwner(ownerId) {
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 
 const commands = [
-  new SlashCommandBuilder().setName("setuppanel").setDescription("Setup panel embed").addStringOption(o => o.setName("title").setDescription("Judul").setRequired(true)).addStringOption(o => o.setName("description").setDescription("Deskripsi").setRequired(true)),
-  new SlashCommandBuilder().setName("whitelistrole").setDescription("Set role admin").addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  new SlashCommandBuilder().setName("setbuyerrole").setDescription("Set role buyer").addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  new SlashCommandBuilder().setName("genkey").setDescription("Generate key").addIntegerOption(o => o.setName("days").setDescription("Durasi hari (0=lifetime)").setRequired(true)).addIntegerOption(o => o.setName("amount").setDescription("Jumlah key").setRequired(false)),
-  new SlashCommandBuilder().setName("whitelist").setDescription("Whitelist user/role").addIntegerOption(o => o.setName("days").setDescription("Durasi hari (0=lifetime)").setRequired(true)).addUserOption(o => o.setName("user").setDescription("User").setRequired(false)).addRoleOption(o => o.setName("role").setDescription("Role").setRequired(false)),
-  new SlashCommandBuilder().setName("blacklist").setDescription("Blacklist user").addUserOption(o => o.setName("user").setDescription("User").setRequired(true)).addStringOption(o => o.setName("reason").setDescription("Alasan").setRequired(false)),
+  new SlashCommandBuilder().setName("setuppanel").setDescription("Setup panel embed").addStringOption(o => o.setName("title").setDescription("Title").setRequired(true)).addStringOption(o => o.setName("description").setDescription("Description").setRequired(true)),
+  new SlashCommandBuilder().setName("whitelistrole").setDescription("Set admin role").addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder().setName("setbuyerrole").setDescription("Set buyer role").addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder().setName("genkey").setDescription("Generate key").addIntegerOption(o => o.setName("days").setDescription("Duration in days (0=lifetime)").setRequired(true)).addIntegerOption(o => o.setName("amount").setDescription("Number of keys").setRequired(false)),
+  new SlashCommandBuilder().setName("whitelist").setDescription("Whitelist user/role").addIntegerOption(o => o.setName("days").setDescription("Duration in days (0=lifetime)").setRequired(true)).addUserOption(o => o.setName("user").setDescription("User").setRequired(false)).addRoleOption(o => o.setName("role").setDescription("Role").setRequired(false)),
+  new SlashCommandBuilder().setName("blacklist").setDescription("Blacklist user").addUserOption(o => o.setName("user").setDescription("User").setRequired(true)).addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(false)),
   new SlashCommandBuilder().setName("unblacklist").setDescription("Unblacklist user").addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
   new SlashCommandBuilder().setName("revoke").setDescription("Revoke key/user").addStringOption(o => o.setName("key").setDescription("Key").setRequired(false)).addUserOption(o => o.setName("user").setDescription("User").setRequired(false)),
-  new SlashCommandBuilder().setName("listkeys").setDescription("Lihat semua key"),
-  new SlashCommandBuilder().setName("userinfo").setDescription("Lihat info user").addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-  new SlashCommandBuilder().setName("deletescript").setDescription("Hapus script milikmu dari SpideyProtect")
+  new SlashCommandBuilder().setName("listkeys").setDescription("View all keys"),
+  new SlashCommandBuilder().setName("userinfo").setDescription("View user info").addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+  new SlashCommandBuilder().setName("deletescript").setDescription("Delete your script from SpideyProtect")
 ].map(c => c.toJSON());
 
 client.once("ready", async () => {
@@ -106,11 +106,11 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({ content: "❌ You Have Been Blacklisted By The Owner", ephemeral: true });
     }
 
-    // ==================== HANDLER TOMBOL ====================
+    // ==================== BUTTON HANDLERS ====================
     if (interaction.isButton()) {
       const customId = interaction.customId;
 
-      // --- TOMBOL GET SCRIPT ---
+      // --- GET SCRIPT BUTTON ---
       if (customId.startsWith("get_script:")) {
         await interaction.deferReply({ ephemeral: true });
 
@@ -119,7 +119,7 @@ client.on("interactionCreate", async interaction => {
         const userKeys = keys.filter(k => String(k.userId) === String(interaction.user.id));
 
         if (userKeys.length === 0) {
-          return interaction.editReply({ content: "❌ Kamu belum punya key aktif!" });
+          return interaction.editReply({ content: "❌ You don't have any active key!" });
         }
 
         const myScripts = await getScriptsByOwner(ownerId);
@@ -128,14 +128,14 @@ client.on("interactionCreate", async interaction => {
         const validKey = userKeys.find(k => activeScriptIds.includes(k.scriptId));
 
         if (!validKey) {
-          return interaction.editReply({ content: "❌ Script untuk key milikmu sudah dihapus atau tidak ditemukan!" });
+          return interaction.editReply({ content: "❌ Your key's script has been deleted or not found!" });
         }
 
         const loaderCode = `script_key="${validKey.key}";\nloadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${validKey.scriptId}.lua"))()`;
-        return interaction.editReply({ content: `📜 Loader kamu:\n\`\`\`lua\n${loaderCode}\n\`\`\`` });
+        return interaction.editReply({ content: `📜 Your loader:\n\`\`\`lua\n${loaderCode}\n\`\`\`` });
       }
 
-      // --- TOMBOL REDEEM KEY ---
+      // --- REDEEM KEY BUTTON ---
       if (customId === "redeem_key") {
         const modal = new ModalBuilder()
           .setCustomId("modal_redeem")
@@ -152,7 +152,7 @@ client.on("interactionCreate", async interaction => {
         return interaction.showModal(modal);
       }
 
-      // --- TOMBOL GET ROLE ---
+      // --- GET ROLE BUTTON ---
       if (customId === "get_role") {
         await interaction.deferReply({ ephemeral: true });
 
@@ -160,30 +160,30 @@ client.on("interactionCreate", async interaction => {
         const buyerRoleId = cfg.buyerRole;
 
         if (!buyerRoleId) {
-          return interaction.editReply({ content: "❌ Buyer role belum di-set oleh admin!" });
+          return interaction.editReply({ content: "❌ Buyer role has not been set by admin!" });
         }
 
         const keys = readKeys();
         const userKeys = keys.filter(k => String(k.userId) === String(interaction.user.id));
 
         if (userKeys.length === 0) {
-          return interaction.editReply({ content: "❌ Kamu belum redeem key! Redeem dulu ya." });
+          return interaction.editReply({ content: "❌ You haven't redeemed a key yet!" });
         }
 
         try {
           const member = await interaction.guild.members.fetch(interaction.user.id);
           if (member.roles.cache.has(buyerRoleId)) {
-            return interaction.editReply({ content: "✅ Kamu sudah memiliki role buyer!" });
+            return interaction.editReply({ content: "✅ You already have the buyer role!" });
           }
 
           await member.roles.add(buyerRoleId);
-          return interaction.editReply({ content: "✅ Role buyer berhasil diberikan!" });
+          return interaction.editReply({ content: "✅ Buyer role has been assigned!" });
         } catch (err) {
-          return interaction.editReply({ content: "❌ Gagal memberikan role. Pastikan bot memiliki permission." });
+          return interaction.editReply({ content: "❌ Failed to assign role. Make sure the bot has permission." });
         }
       }
 
-      // --- TOMBOL RESET HWID ---
+      // --- RESET HWID BUTTON ---
       if (customId === "reset_hwid") {
         await interaction.deferReply({ ephemeral: true });
 
@@ -191,7 +191,7 @@ client.on("interactionCreate", async interaction => {
         const userKeys = keys.filter(k => String(k.userId) === String(interaction.user.id));
 
         if (userKeys.length === 0) {
-          return interaction.editReply({ content: "❌ Kamu belum punya key aktif!" });
+          return interaction.editReply({ content: "❌ You don't have any active key!" });
         }
 
         let resetCount = 0;
@@ -204,14 +204,14 @@ client.on("interactionCreate", async interaction => {
         });
 
         if (resetCount === 0) {
-          return interaction.editReply({ content: "ℹ️ Tidak ada HWID yang terdaftar untuk key kamu." });
+          return interaction.editReply({ content: "ℹ️ No HWID is registered for your keys." });
         }
 
         writeKeys(updatedKeys);
-        return interaction.editReply({ content: `✅ HWID berhasil di-reset untuk ${resetCount} key!` });
+        return interaction.editReply({ content: `✅ HWID has been reset for ${resetCount} key(s)!` });
       }
 
-      // --- TOMBOL GET STATS ---
+      // --- GET STATS BUTTON ---
       if (customId === "get_stats") {
         await interaction.deferReply({ ephemeral: true });
 
@@ -219,23 +219,23 @@ client.on("interactionCreate", async interaction => {
         const userKeys = keys.filter(k => String(k.userId) === String(interaction.user.id));
 
         if (userKeys.length === 0) {
-          return interaction.editReply({ content: "❌ Kamu belum punya key aktif!" });
+          return interaction.editReply({ content: "❌ You don't have any active key!" });
         }
 
         const myScripts = await getScriptsByOwner(interaction.user.id);
         const scriptMap = {};
         myScripts.forEach(s => { scriptMap[s.id] = s.name; });
 
-        let stats = "📊 **STATUS KEY KAMU**\n\n";
+        let stats = "📊 **YOUR KEY STATUS**\n\n";
         let totalKeys = userKeys.length;
         let activeKeys = 0;
         let expiredKeys = 0;
 
         userKeys.forEach(k => {
-          const scriptName = scriptMap[k.scriptId] || "❓ Script dihapus";
+          const scriptName = scriptMap[k.scriptId] || "❓ Script deleted";
           const isExpired = k.expiry && new Date(k.expiry) < new Date();
-          const status = isExpired ? "❌ Expired" : "✅ Aktif";
-          const hwidStatus = k.hwid ? "🔒 Terikat" : "🔓 Belum terikat";
+          const status = isExpired ? "❌ Expired" : "✅ Active";
+          const hwidStatus = k.hwid ? "🔒 Bound" : "🔓 Not bound";
           const expiryText = k.expiry ? new Date(k.expiry).toLocaleDateString() : "♾️ Lifetime";
 
           if (!isExpired) activeKeys++;
@@ -248,7 +248,7 @@ client.on("interactionCreate", async interaction => {
           stats += `  • Key: \`${k.key}\`\n\n`;
         });
 
-        stats += `\n📈 **Total**: ${totalKeys} key | Aktif: ${activeKeys} | Expired: ${expiredKeys}`;
+        stats += `\n📈 **Total**: ${totalKeys} keys | Active: ${activeKeys} | Expired: ${expiredKeys}`;
 
         if (stats.length > 2000) {
           stats = stats.slice(0, 1990) + "\n... (truncated)";
@@ -257,8 +257,8 @@ client.on("interactionCreate", async interaction => {
         return interaction.editReply({ content: stats });
       }
 
-      // Tombol tidak dikenal
-      return interaction.reply({ content: "❌ Tombol tidak dikenal.", ephemeral: true });
+      // Unknown button
+      return interaction.reply({ content: "❌ Unknown button.", ephemeral: true });
     }
 
     // ==================== MODAL SUBMIT ====================
@@ -268,9 +268,9 @@ client.on("interactionCreate", async interaction => {
       const keys = readKeys();
       const keyData = keys.find(k => k.key === keyInput);
 
-      if (!keyData) return interaction.editReply({ content: "❌ Key tidak valid." });
+      if (!keyData) return interaction.editReply({ content: "❌ Invalid key." });
       if (keyData.userId && String(keyData.userId) !== String(interaction.user.id)) {
-        return interaction.editReply({ content: "❌ Key sudah dipakai user lain." });
+        return interaction.editReply({ content: "❌ This key is already used by another user." });
       }
 
       keyData.userId = String(interaction.user.id);
@@ -286,7 +286,7 @@ client.on("interactionCreate", async interaction => {
         } catch {}
       }
 
-      return interaction.editReply({ content: "✅ Key berhasil di-redeem!" });
+      return interaction.editReply({ content: "✅ Key redeemed successfully!" });
     }
 
     // ==================== SELECT MENU ====================
@@ -308,9 +308,9 @@ client.on("interactionCreate", async interaction => {
           const filteredKeys = keys.filter(k => k.scriptId !== scriptId);
           writeKeys(filteredKeys);
 
-          return interaction.editReply({ content: "✅ Script beserta seluruh key miliknya berhasil dihapus permanen!" });
+          return interaction.editReply({ content: "✅ Script and all its keys have been permanently deleted!" });
         } catch (err) {
-          return interaction.editReply({ content: "❌ Gagal menghapus script." });
+          return interaction.editReply({ content: "❌ Failed to delete script." });
         }
       }
 
@@ -324,7 +324,7 @@ client.on("interactionCreate", async interaction => {
 
         const myScripts = await getScriptsByOwner(adminId);
         const owned = myScripts.find(s => s.id === scriptId);
-        if (!owned) return interaction.editReply({ content: "❌ Script bukan milikmu." });
+        if (!owned) return interaction.editReply({ content: "❌ This script is not yours." });
 
         const keys = readKeys();
         const expiry = days === 0 ? null : new Date(Date.now() + days * 86400000).toISOString();
@@ -385,6 +385,46 @@ client.on("interactionCreate", async interaction => {
           return interaction.editReply({ content: `<@&${targetId}> You have been whitelisted! (${addedCount} members)\nYou can access the script via this message --> ${channelTag}` });
         }
       }
+
+      // --- GENKEY SELECT ---
+      if (interaction.customId.startsWith("genkey_select:")) {
+        await interaction.deferReply({ ephemeral: true });
+
+        const [, daysStr, amountStr, adminId] = interaction.customId.split(":");
+        const days = parseInt(daysStr);
+        const amount = parseInt(amountStr);
+        const scriptId = interaction.values[0];
+
+        const myScripts = await getScriptsByOwner(adminId);
+        const owned = myScripts.find(s => s.id === scriptId);
+        if (!owned) return interaction.editReply({ content: "❌ This script is not yours." });
+
+        const keys = readKeys();
+        const generated = [];
+        const expiry = days === 0 ? null : new Date(Date.now() + days * 86400000).toISOString();
+
+        for (let i = 0; i < amount; i++) {
+          const key = generateKey();
+          keys.push({ 
+            key, 
+            hwid: null, 
+            userId: null, 
+            username: null, 
+            scriptId, 
+            redeemedAt: null, 
+            expiry, 
+            createdAt: new Date().toISOString(), 
+            createdBy: adminId 
+          });
+          generated.push(key);
+        }
+        writeKeys(keys);
+
+        const keyList = generated.map(k => `\`${k}\``).join("\n");
+        return interaction.editReply({ 
+          content: `✅ **${amount} key(s)** generated for script **${owned.name}**!\n\n${keyList}` 
+        });
+      }
     }
 
     // ==================== CHAT INPUT COMMANDS ====================
@@ -394,27 +434,27 @@ client.on("interactionCreate", async interaction => {
       // --- WHITELISTROLE ---
       if (commandName === "whitelistrole") {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-          return interaction.reply({ content: "❌ Hanya Admin.", ephemeral: true });
+          return interaction.reply({ content: "❌ Admin only.", ephemeral: true });
         }
         const role = interaction.options.getRole("role");
         const cfg = readConfig();
         if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
         cfg[interaction.guildId].whitelistRole = role.id;
         writeConfig(cfg);
-        return interaction.reply({ content: `✅ Role <@&${role.id}> sekarang admin bot.`, ephemeral: true });
+        return interaction.reply({ content: `✅ Role <@&${role.id}> is now the bot admin role.`, ephemeral: true });
       }
 
       // --- SETBUYERROLE ---
       if (commandName === "setbuyerrole") {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-          return interaction.reply({ content: "❌ Hanya Admin.", ephemeral: true });
+          return interaction.reply({ content: "❌ Admin only.", ephemeral: true });
         }
         const role = interaction.options.getRole("role");
         const cfg = readConfig();
         if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
         cfg[interaction.guildId].buyerRole = role.id;
         writeConfig(cfg);
-        return interaction.reply({ content: `✅ Buyer role di-set ke <@&${role.id}>!`, ephemeral: true });
+        return interaction.reply({ content: `✅ Buyer role set to <@&${role.id}>!`, ephemeral: true });
       }
 
       // --- SETUPPANEL ---
@@ -426,7 +466,7 @@ client.on("interactionCreate", async interaction => {
         
         const myScripts = await getScriptsByOwner(interaction.user.id);
         if (myScripts.length === 0) {
-          return interaction.editReply({ content: "❌ Kamu belum punya script." });
+          return interaction.editReply({ content: "❌ You don't have any scripts yet." });
         }
 
         const embed = new EmbedBuilder()
@@ -480,7 +520,7 @@ client.on("interactionCreate", async interaction => {
         cfg[interaction.guildId].panelChannelId = interaction.channel.id;
         writeConfig(cfg);
 
-        return interaction.editReply({ content: "✅ Panel dibuat!" });
+        return interaction.editReply({ content: "✅ Panel created!" });
       }
 
       // --- DELETESCRIPT ---
@@ -492,7 +532,7 @@ client.on("interactionCreate", async interaction => {
 
         const myScripts = await getScriptsByOwner(interaction.user.id);
         if (myScripts.length === 0) {
-          return interaction.editReply({ content: "❌ Kamu belum punya script." });
+          return interaction.editReply({ content: "❌ You don't have any scripts yet." });
         }
 
         const options = myScripts.slice(0, 25).map(s => 
@@ -503,11 +543,11 @@ client.on("interactionCreate", async interaction => {
 
         const select = new StringSelectMenuBuilder()
           .setCustomId("deletescript_select")
-          .setPlaceholder("Pilih script yang mau dihapus...")
+          .setPlaceholder("Select a script to delete...")
           .addOptions(options);
 
         return interaction.editReply({ 
-          content: "Pilih script yang akan dihapus permanen:", 
+          content: "Select the script to delete permanently:", 
           components: [new ActionRowBuilder().addComponents(select)] 
         });
       }
@@ -524,12 +564,12 @@ client.on("interactionCreate", async interaction => {
         const days = interaction.options.getInteger("days");
 
         if (!targetUser && !targetRole) {
-          return interaction.editReply({ content: "❌ Pilih user atau role!" });
+          return interaction.editReply({ content: "❌ Select a user or role!" });
         }
 
         const myScripts = await getScriptsByOwner(interaction.user.id);
         if (myScripts.length === 0) {
-          return interaction.editReply({ content: "❌ Kamu belum punya script." });
+          return interaction.editReply({ content: "❌ You don't have any scripts yet." });
         }
 
         const targetType = targetUser ? "user" : "role";
@@ -543,11 +583,11 @@ client.on("interactionCreate", async interaction => {
 
         const select = new StringSelectMenuBuilder()
           .setCustomId(`whitelist_select:${targetType}:${targetId}:${days}:${interaction.user.id}`)
-          .setPlaceholder("Pilih script...")
+          .setPlaceholder("Select a script...")
           .addOptions(options);
 
         return interaction.editReply({ 
-          content: `Pilih script untuk di-whitelist:`, 
+          content: `Select a script to whitelist:`, 
           components: [new ActionRowBuilder().addComponents(select)] 
         });
       }
@@ -564,7 +604,7 @@ client.on("interactionCreate", async interaction => {
 
         const bl = readBlacklist();
         if (bl.some(b => String(b.userId) === String(targetUser.id))) {
-          return interaction.editReply({ content: "❌ User ini sudah ada di blacklist!" });
+          return interaction.editReply({ content: "❌ This user is already blacklisted!" });
         }
 
         bl.push({ 
@@ -589,7 +629,7 @@ client.on("interactionCreate", async interaction => {
         }
 
         return interaction.editReply({ 
-          content: `🚫 **<@${targetUser.id}> telah di-Blacklist!**\nSeluruh akses script dan role buyer telah dicabut.` 
+          content: `🚫 **<@${targetUser.id}> has been Blacklisted!**\nAll script access and buyer role has been revoked.` 
         });
       }
 
@@ -605,12 +645,12 @@ client.on("interactionCreate", async interaction => {
         const index = bl.findIndex(b => String(b.userId) === String(targetUser.id));
 
         if (index === -1) {
-          return interaction.editReply({ content: "❌ User tidak ada di blacklist." });
+          return interaction.editReply({ content: "❌ User is not blacklisted." });
         }
 
         bl.splice(index, 1);
         writeBlacklist(bl);
-        return interaction.editReply({ content: `✅ **<@${targetUser.id}> telah di-Unblacklist!**` });
+        return interaction.editReply({ content: `✅ **<@${targetUser.id}> has been Unblacklisted!**` });
       }
 
       // --- GENKEY ---
@@ -624,16 +664,15 @@ client.on("interactionCreate", async interaction => {
         const amount = interaction.options.getInteger("amount") || 1;
 
         if (amount > 50) {
-          return interaction.editReply({ content: "❌ Maksimal 50 key dalam sekali generate." });
+          return interaction.editReply({ content: "❌ Maximum 50 keys per generation." });
         }
 
         const myScripts = await getScriptsByOwner(interaction.user.id);
         if (myScripts.length === 0) {
-          return interaction.editReply({ content: "❌ Kamu belum punya script." });
+          return interaction.editReply({ content: "❌ You don't have any scripts yet." });
         }
 
         if (myScripts.length === 1) {
-          // Langsung generate tanpa pilihan
           const scriptId = myScripts[0].id;
           const keys = readKeys();
           const generated = [];
@@ -658,11 +697,10 @@ client.on("interactionCreate", async interaction => {
 
           const keyList = generated.map(k => `\`${k}\``).join("\n");
           return interaction.editReply({ 
-            content: `✅ **${amount} key** berhasil dibuat untuk script **${myScripts[0].name}**!\n\n${keyList}` 
+            content: `✅ **${amount} key(s)** generated for script **${myScripts[0].name}**!\n\n${keyList}` 
           });
         }
 
-        // Tampilkan pilihan script
         const options = myScripts.slice(0, 25).map(s => 
           new StringSelectMenuOptionBuilder()
             .setLabel(s.name.length > 50 ? s.name.slice(0, 47) + "..." : s.name)
@@ -671,52 +709,12 @@ client.on("interactionCreate", async interaction => {
 
         const select = new StringSelectMenuBuilder()
           .setCustomId(`genkey_select:${days}:${amount}:${interaction.user.id}`)
-          .setPlaceholder("Pilih script...")
+          .setPlaceholder("Select a script...")
           .addOptions(options);
 
         return interaction.editReply({ 
-          content: `Pilih script untuk membuat ${amount} key:`, 
+          content: `Select a script to generate ${amount} key(s):`, 
           components: [new ActionRowBuilder().addComponents(select)] 
-        });
-      }
-
-      // --- GENKEY SELECT MENU ---
-      if (interaction.isStringSelectMenu() && interaction.customId.startsWith("genkey_select:")) {
-        await interaction.deferReply({ ephemeral: true });
-
-        const [, daysStr, amountStr, adminId] = interaction.customId.split(":");
-        const days = parseInt(daysStr);
-        const amount = parseInt(amountStr);
-        const scriptId = interaction.values[0];
-
-        const myScripts = await getScriptsByOwner(adminId);
-        const owned = myScripts.find(s => s.id === scriptId);
-        if (!owned) return interaction.editReply({ content: "❌ Script bukan milikmu." });
-
-        const keys = readKeys();
-        const generated = [];
-        const expiry = days === 0 ? null : new Date(Date.now() + days * 86400000).toISOString();
-
-        for (let i = 0; i < amount; i++) {
-          const key = generateKey();
-          keys.push({ 
-            key, 
-            hwid: null, 
-            userId: null, 
-            username: null, 
-            scriptId, 
-            redeemedAt: null, 
-            expiry, 
-            createdAt: new Date().toISOString(), 
-            createdBy: adminId 
-          });
-          generated.push(key);
-        }
-        writeKeys(keys);
-
-        const keyList = generated.map(k => `\`${k}\``).join("\n");
-        return interaction.editReply({ 
-          content: `✅ **${amount} key** berhasil dibuat untuk script **${owned.name}**!\n\n${keyList}` 
         });
       }
 
@@ -731,7 +729,7 @@ client.on("interactionCreate", async interaction => {
         const targetUser = interaction.options.getUser("user");
 
         if (!key && !targetUser) {
-          return interaction.editReply({ content: "❌ Masukkan key atau user yang akan di-revoke!" });
+          return interaction.editReply({ content: "❌ Provide a key or user to revoke!" });
         }
 
         const keys = readKeys();
@@ -741,7 +739,7 @@ client.on("interactionCreate", async interaction => {
           const initialLength = keys.length;
           const newKeys = keys.filter(k => k.key !== key.toUpperCase().trim());
           if (newKeys.length === initialLength) {
-            return interaction.editReply({ content: "❌ Key tidak ditemukan." });
+            return interaction.editReply({ content: "❌ Key not found." });
           }
           writeKeys(newKeys);
           removed = initialLength - newKeys.length;
@@ -752,7 +750,7 @@ client.on("interactionCreate", async interaction => {
           writeKeys(newKeys);
         }
 
-        return interaction.editReply({ content: `✅ Berhasil me-revoke ${removed} key!` });
+        return interaction.editReply({ content: `✅ Successfully revoked ${removed} key(s)!` });
       }
 
       // --- LISTKEYS ---
@@ -770,16 +768,16 @@ client.on("interactionCreate", async interaction => {
         const myKeys = keys.filter(k => k.createdBy === interaction.user.id);
 
         if (myKeys.length === 0) {
-          return interaction.editReply({ content: "📭 Belum ada key yang kamu buat." });
+          return interaction.editReply({ content: "📭 You haven't generated any keys yet." });
         }
 
-        let list = "🔑 **DAFTAR KEY YANG KAMU BUAT**\n\n";
+        let list = "🔑 **YOUR GENERATED KEYS**\n\n";
         let used = 0;
         let unused = 0;
 
         myKeys.slice(0, 25).forEach(k => {
-          const scriptName = scriptMap[k.scriptId] || "❓ Script dihapus";
-          const status = k.userId ? `✅ Dipakai oleh <@${k.userId}>` : "⏳ Belum dipakai";
+          const scriptName = scriptMap[k.scriptId] || "❓ Script deleted";
+          const status = k.userId ? `✅ Used by <@${k.userId}>` : "⏳ Unused";
           const expiryText = k.expiry ? new Date(k.expiry).toLocaleDateString() : "♾️ Lifetime";
 
           if (k.userId) used++;
@@ -791,7 +789,7 @@ client.on("interactionCreate", async interaction => {
           list += `  • Expiry: ${expiryText}\n\n`;
         });
 
-        list += `\n📊 **Total**: ${myKeys.length} key | Dipakai: ${used} | Belum dipakai: ${unused}`;
+        list += `\n📊 **Total**: ${myKeys.length} keys | Used: ${used} | Unused: ${unused}`;
 
         if (list.length > 2000) {
           list = list.slice(0, 1990) + "\n... (truncated)";
@@ -820,15 +818,15 @@ client.on("interactionCreate", async interaction => {
         });
 
         const embed = new EmbedBuilder()
-          .setTitle(`👤 Info User: ${targetUser.username}`)
+          .setTitle(`👤 User Info: ${targetUser.username}`)
           .setThumbnail(targetUser.displayAvatarURL())
           .setColor(0x5865F2)
           .addFields(
             { name: "📛 User", value: `<@${targetUser.id}>`, inline: true },
             { name: "🆔 ID", value: targetUser.id, inline: true },
-            { name: "🚫 Blacklist", value: isBlacklisted_ ? "❌ Ya" : "✅ Tidak", inline: true },
-            { name: "👑 Buyer Role", value: hasBuyerRole ? "✅ Punya" : "❌ Tidak", inline: true },
-            { name: "🔑 Jumlah Key", value: String(userKeys.length), inline: true }
+            { name: "🚫 Blacklist", value: isBlacklisted_ ? "❌ Yes" : "✅ No", inline: true },
+            { name: "👑 Buyer Role", value: hasBuyerRole ? "✅ Has" : "❌ Doesn't have", inline: true },
+            { name: "🔑 Key Count", value: String(userKeys.length), inline: true }
           )
           .setTimestamp();
 
@@ -839,9 +837,9 @@ client.on("interactionCreate", async interaction => {
   } catch (err) {
     console.error(err);
     if (interaction.deferred || interaction.replied) {
-      await interaction.editReply({ content: "❌ Terjadi error. Coba lagi nanti." }).catch(() => {});
+      await interaction.editReply({ content: "❌ An error occurred. Please try again later." }).catch(() => {});
     } else {
-      await interaction.reply({ content: "❌ Terjadi error. Coba lagi nanti.", ephemeral: true }).catch(() => {});
+      await interaction.reply({ content: "❌ An error occurred. Please try again later.", ephemeral: true }).catch(() => {});
     }
   }
 });
