@@ -581,8 +581,9 @@ app.get("/api/loader/:id.lua", (req, res) => {
     // Key sudah punya HWID terdaftar — wajib cocok persis
     if (!clientHwid || clientHwid !== keyData.hwid) {
       return res
-        .status(403)
+        .status(200)
         .type("text/plain")
+        .set("Cache-Control", "no-store")
         .send('local plr = game:GetService("Players").LocalPlayer\nif plr then\n    plr:Kick("\\n[SpideyProtect]\\nHWID Mismatch Go Reset Your HWID\\n\\nDevice ini tidak terdaftar untuk key kamu.\\nGunakan tombol Reset HWID di panel Discord.")\nend');
     }
   } else if (clientHwid) {
