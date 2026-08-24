@@ -481,13 +481,21 @@ Format loader:
 
 app.get("/api/loader/:id.lua", (req, res) => {
   const scriptId = req.params.id;
+  // Support both Luarmor-style (key from global var via query) and header
   const key = req.query.key || req.headers["x-script-key"];
 
+  // If no key in request, return a Lua loader that reads script_key global and re-calls with it
   if (!key) {
+    const base = req.headers["x-forwarded-proto"]
+      ? `${req.headers["x-forwarded-proto"]}://${req.get("host")}`
+      : `${req.protocol}://${req.get("host")}`;
+    const selfUrl = `${base}/api/loader/${scriptId}.lua`;
+    const luaLoader = `-- SpideyProtect Loader\nif not script_key then\n    error("[SpideyProtect] script_key is required. Set it before loading:\\n  script_key=\\"YOUR_KEY\\"")\nend\nlocal url = "${selfUrl}?key=" .. tostring(script_key)\nloadstring(game:HttpGet(url, true))()\n`;
     return res
-      .status(403)
+      .status(200)
       .type("text/plain")
-      .send('-- SpideyProtect: Key required\n-- Gunakan: script_key="KEY_LO"; loadstring(game:HttpGet(...))()');
+      .set("Cache-Control", "no-store")
+      .send(luaLoader);
   }
 
   const keys = readKeys();
@@ -574,7 +582,8 @@ app.get("/files/loaders/:id.lua", (req, res) => {
   }
 
   const base = getBaseUrl(req);
-  const loaderCode = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua?key="..script_key))()`;
+  // Luarmor-style: key sebagai variabel terpisah, URL bersih tanpa query string
+  const loaderCode = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua"))()`;
 
   res.status(200).send(`<!DOCTYPE html>
 <html lang="en">
@@ -704,6 +713,7 @@ app.get("/", requireAuth, (req, res) => {
       const base = getBaseUrl(req);
       const loaderPage = `${base}/files/loaders/${script.id}.lua`;
       const loaderCode = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua?key="..script_key))()`;
+      const loaderCodeDisplay = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua"))()`;
 
       return `
 <div class="script-card">
@@ -720,7 +730,7 @@ app.get("/", requireAuth, (req, res) => {
     <button class="dots" onclick="toggleMenu('${script.id}')">⋮</button>
     <div class="menu" id="menu-${script.id}">
         <button onclick='openLoader(${JSON.stringify(loaderPage)})'>🔗 Open Loader</button>
-        <button onclick='copyLoaderCode(${JSON.stringify(loaderCode)})'>📋 Copy Loader</button>
+        <button onclick='copyLoaderCode(${JSON.stringify(loaderCodeDisplay)})'>📋 Copy Loader</button>
         <button onclick="toggleScript('${script.id}')">
             ${script.enabled ? "⏸ Disable" : "▶ Enable"}
         </button>
