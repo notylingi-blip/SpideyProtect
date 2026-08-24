@@ -430,6 +430,39 @@ app.delete("/api/scripts/:id", requireAuth, (req, res) => {
 
 /*
 
+INTERNAL API - DELETE SCRIPT (dipanggil bot.js)
+
+*/
+
+app.delete("/api/scripts/internal/:id", (req, res) => {
+  const secret = req.headers["x-api-secret"];
+
+  if (secret !== API_SECRET) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const db = readDB();
+  const index = db.findIndex(x => x.id === req.params.id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: "Script not found" });
+  }
+
+  const script = db[index];
+  const filepath = path.join(SCRIPTS_DIR, script.filename);
+
+  if (fs.existsSync(filepath)) {
+    fs.unlinkSync(filepath);
+  }
+
+  db.splice(index, 1);
+  writeDB(db);
+
+  res.json({ success: true, name: script.name });
+});
+
+/*
+
 API - EXECUTE (dipanggil loader lama, tanpa key)
 
 */
