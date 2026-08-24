@@ -512,14 +512,13 @@ client.on("interactionCreate", async interaction => {
 
     const keys = readKeys();
     const key = generateKey();
-    const hwid = generateHwid(targetUserId);
     const expiry = days === 0
       ? null
       : new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 
     keys.push({
       key,
-      hwid,
+      hwid: null,  // HWID di-bind otomatis saat pertama kali run loader dari Roblox
       userId: targetUserId,
       username: null,
       scriptId,
@@ -942,10 +941,7 @@ client.on("interactionCreate", async interaction => {
       return interaction.editReply({ content: "❌ Key ini sudah digunakan oleh user lain." });
     }
 
-    if (!keyData.hwid) {
-      keyData.hwid = generateHwid(interaction.user.id);
-    }
-
+    // HWID dibiarkan null — akan di-bind otomatis saat pertama kali run loader dari Roblox
     keyData.userId = interaction.user.id;
     keyData.username = interaction.user.username;
     keyData.redeemedAt = new Date().toISOString();
@@ -960,7 +956,7 @@ client.on("interactionCreate", async interaction => {
       .addFields(
         { name: "Key", value: `\`${keyInput}\``, inline: true },
         { name: "Expiry", value: expiry, inline: true },
-        { name: "HWID", value: `\`${keyData.hwid}\``, inline: false }
+        { name: "HWID", value: `\`Akan di-bind otomatis saat pertama kali run loader\``, inline: false }
       )
       .setColor(0x57F287)
       .setTimestamp();
@@ -1086,12 +1082,13 @@ client.on("interactionCreate", async interaction => {
       });
     }
 
-    keyData.hwid = generateHwid(userId);
+    // Set null — HWID baru akan di-bind otomatis saat pertama kali run loader dari Roblox
+    keyData.hwid = null;
     keyData.lastHwidReset = new Date().toISOString();
     writeKeys(keys);
 
     return interaction.editReply({
-      content: `✅ HWID berhasil direset!\nHWID baru: \`${keyData.hwid}\``
+      content: `✅ HWID berhasil direset!\nHWID baru akan di-bind otomatis saat kamu run loader dari Roblox berikutnya.`
     });
   }
 
