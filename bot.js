@@ -256,6 +256,7 @@ client.once("ready", async () => {
 */
 
 client.on("interactionCreate", async interaction => {
+  try {
 
   /*
   ------------------------------------------------
@@ -352,10 +353,17 @@ client.on("interactionCreate", async interaction => {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    await interaction.channel.send({
-      embeds: [embed],
-      components: [row1, row2, row3]
-    });
+    try {
+      await interaction.channel.send({
+        embeds: [embed],
+        components: [row1, row2, row3]
+      });
+    } catch (sendErr) {
+      console.error("Gagal kirim panel:", sendErr);
+      return interaction.editReply({
+        content: "❌ Gagal mengirim panel ke channel ini. Pastikan bot punya permission **Send Messages** dan **Embed Links** di channel ini."
+      });
+    }
 
     return interaction.editReply({ content: "✅ Panel berhasil dibuat!" });
   }
@@ -1134,6 +1142,18 @@ client.on("interactionCreate", async interaction => {
       .setTimestamp();
 
     return interaction.editReply({ embeds: [embed] });
+  }
+
+  } catch (err) {
+    console.error("Interaction error:", err);
+    const msg = "❌ Terjadi error internal. Coba lagi nanti.";
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: msg });
+      } else {
+        await interaction.reply({ content: msg, ephemeral: true });
+      }
+    } catch {}
   }
 
 });
