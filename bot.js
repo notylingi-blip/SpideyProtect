@@ -129,7 +129,8 @@ async function getScriptsByOwner(ownerId) {
       `${CONFIG.apiBase}/api/scripts/internal`,
       {
         headers: { "x-api-secret": CONFIG.apiSecret },
-        params: { ownerId }
+        params: { ownerId },
+        timeout: 8000
       }
     );
     return res.data || [];
@@ -583,6 +584,8 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({ content: "❌ Masukkan key atau user yang mau direvoke.", ephemeral: true });
     }
 
+    await interaction.deferReply({ ephemeral: true });
+
     // Ambil script milik admin ini untuk validasi
     const myScripts = await getScriptsByOwner(interaction.user.id);
     const myScriptIds = new Set(myScripts.map(s => s.id));
@@ -600,7 +603,7 @@ client.on("interactionCreate", async interaction => {
           keys.splice(index, 1);
           removed++;
         } else {
-          return interaction.reply({ content: "❌ Kamu tidak bisa merevoke key yang bukan milikmu.", ephemeral: true });
+          return interaction.editReply({ content: "❌ Kamu tidak bisa merevoke key yang bukan milikmu." });
         }
       }
     }
@@ -621,12 +624,11 @@ client.on("interactionCreate", async interaction => {
     writeKeys(keys);
 
     if (removed === 0) {
-      return interaction.reply({ content: "❌ Key atau user tidak ditemukan, atau bukan milikmu.", ephemeral: true });
+      return interaction.editReply({ content: "❌ Key atau user tidak ditemukan, atau bukan milikmu." });
     }
 
-    return interaction.reply({
-      content: `✅ Berhasil merevoke ${removed} key/akses.`,
-      ephemeral: true
+    return interaction.editReply({
+      content: `✅ Berhasil merevoke ${removed} key/akses.`
     });
   }
 
@@ -643,12 +645,14 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({ content: "❌ Kamu tidak punya permission.", ephemeral: true });
     }
 
+    await interaction.deferReply({ ephemeral: true });
+
     const allKeys = readKeys();
     // Filter hanya key yang dibuat oleh user ini
     const keys = allKeys.filter(k => k.createdBy === interaction.user.id);
 
     if (keys.length === 0) {
-      return interaction.reply({ content: "Belum ada key yang kamu buat.", ephemeral: true });
+      return interaction.editReply({ content: "Belum ada key yang kamu buat." });
     }
 
     const lines = keys.map(k => {
@@ -673,7 +677,7 @@ client.on("interactionCreate", async interaction => {
 
     if (current) chunks.push(current);
 
-    await interaction.reply({ content: chunks[0], ephemeral: true });
+    await interaction.editReply({ content: chunks[0] });
     for (let i = 1; i < chunks.length; i++) {
       await interaction.followUp({ content: chunks[i], ephemeral: true });
     }
@@ -693,6 +697,8 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({ content: "❌ Kamu tidak punya permission.", ephemeral: true });
     }
 
+    await interaction.deferReply({ ephemeral: true });
+
     const targetUser = interaction.options.getUser("user");
     const allKeys = readKeys();
 
@@ -706,9 +712,8 @@ client.on("interactionCreate", async interaction => {
     );
 
     if (userKeys.length === 0) {
-      return interaction.reply({
-        content: `❌ <@${targetUser.id}> tidak punya key/akses dari script milikmu.`,
-        ephemeral: true
+      return interaction.editReply({
+        content: `❌ <@${targetUser.id}> tidak punya key/akses dari script milikmu.`
       });
     }
 
@@ -732,7 +737,7 @@ client.on("interactionCreate", async interaction => {
       .setColor(0x5865F2)
       .setTimestamp();
 
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.editReply({ embeds: [embed] });
   }
 
   /*
@@ -845,8 +850,9 @@ client.on("interactionCreate", async interaction => {
         {
           headers: {
             "x-api-secret": CONFIG.apiSecret,
-            "x-owner-id": ownerId  // Server akan verifikasi ownership
-          }
+            "x-owner-id": ownerId
+          },
+          timeout: 8000
         }
       );
 
