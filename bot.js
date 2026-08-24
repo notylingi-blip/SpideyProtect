@@ -365,6 +365,12 @@ client.on("interactionCreate", async interaction => {
       });
     }
 
+    // Simpan channel panel ke config supaya whitelist bisa mention channel-nya
+    const cfg2 = readConfig();
+    if (!cfg2[interaction.guildId]) cfg2[interaction.guildId] = {};
+    cfg2[interaction.guildId].panelChannelId = interaction.channel.id;
+    writeConfig(cfg2);
+
     return interaction.editReply({ content: "✅ Panel berhasil dibuat!" });
   }
 
@@ -548,11 +554,24 @@ client.on("interactionCreate", async interaction => {
         { name: "User", value: `<@${targetUserId}>`, inline: true },
         { name: "Script", value: owned.name, inline: true },
         { name: "Durasi", value: duration, inline: true },
-        { name: "Key", value: `\`${key}\``, inline: false },
-        { name: "HWID", value: `\`${hwid}\``, inline: false }
+        { name: "Key", value: `\`${key}\``, inline: false }
       )
       .setColor(0x57F287)
       .setTimestamp();
+
+    // Kirim public message ke channel panel
+    try {
+      const guildCfg = readConfig()[interaction.guildId] || {};
+      const panelChannelId = guildCfg.panelChannelId;
+      if (panelChannelId) {
+        const panelChannel = await interaction.guild.channels.fetch(panelChannelId).catch(() => null);
+        if (panelChannel) {
+          await panelChannel.send(
+            `<@${targetUserId}> You have been whitelisted!\nYou can access the script via this message --> <#${panelChannelId}>`
+          );
+        }
+      }
+    } catch {}
 
     try {
       const dmEmbed = new EmbedBuilder()
