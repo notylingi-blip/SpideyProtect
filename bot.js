@@ -406,6 +406,16 @@ client.on("interactionCreate", async interaction => {
       }
     } catch {}
 
+    // Kirim DM ke user yang di-blacklist
+    try {
+      const dmEmbed = new EmbedBuilder()
+        .setTitle("🚫 You Have Been Blacklisted")
+        .setDescription("Kamu telah di-blacklist oleh owner. Akses ke semua script telah dicabut.")
+        .setColor(0xED4245)
+        .setTimestamp();
+      await targetUser.send({ embeds: [dmEmbed] });
+    } catch {}
+
     return interaction.editReply({
       content: `✅ <@${targetUser.id}> berhasil di-blacklist! (${removed} key dihapus)`
     });
@@ -433,6 +443,17 @@ client.on("interactionCreate", async interaction => {
         delete blacklist[interaction.guildId];
       }
       writeBlacklist(blacklist);
+
+      // Kirim DM ke user yang di-unblacklist
+      try {
+        const dmEmbed = new EmbedBuilder()
+          .setTitle("✅ You Have Been Unblacklisted")
+          .setDescription("Kamu telah di-unblacklist oleh owner. Akses ke script telah dipulihkan.")
+          .setColor(0x57F287)
+          .setTimestamp();
+        await targetUser.send({ embeds: [dmEmbed] });
+      } catch {}
+
       return interaction.editReply({
         content: `✅ <@${targetUser.id}> berhasil di-unblacklist!`
       });
@@ -999,25 +1020,27 @@ client.on("interactionCreate", async interaction => {
       });
     }
 
+    const isBlacklistedUser = isBlacklisted(interaction.guildId, targetUser.id);
+
     const fields = userKeys.map(k => {
       const expiry = k.expiry
         ? `<t:${Math.floor(new Date(k.expiry).getTime() / 1000)}:R>`
         : "Lifetime";
       const isExpired = k.expiry && new Date(k.expiry) < new Date();
-      const status = isExpired ? "❌ Expired" : "✅ Aktif";
-      const isBlacklisted = isBlacklisted(interaction.guildId, targetUser.id);
+      const status = isBlacklistedUser ? "🚫 BLACKLISTED" : (isExpired ? "❌ Expired" : "✅ Aktif");
 
       return {
         name: `\`${k.key}\``,
-        value: `Status: ${isBlacklisted ? "🚫 BLACKLISTED" : status}\nExpiry: ${expiry}\nHWID: \`${k.hwid || "Belum di-set"}\``,
+        value: `Status: ${status}\nExpiry: ${expiry}\nHWID: \`${k.hwid || "Belum di-set"}\``,
         inline: false
       };
     });
 
     const embed = new EmbedBuilder()
       .setTitle(`📊 Info ${targetUser.username}`)
+      .setDescription(isBlacklistedUser ? "🚫 **User ini sedang di-blacklist!**" : null)
       .addFields(fields)
-      .setColor(0x5865F2)
+      .setColor(isBlacklistedUser ? 0xED4245 : 0x5865F2)
       .setTimestamp();
 
     return interaction.editReply({ embeds: [embed] });
@@ -1170,7 +1193,6 @@ client.on("interactionCreate", async interaction => {
   */
 
   if (interaction.isButton() && interaction.customId === "redeem_key") {
-    // Cek blacklist
     if (isBlacklisted(interaction.guildId, interaction.user.id)) {
       return interaction.reply({
         content: "❌ **You Have Been Blacklisted By The Owner**\nKamu tidak bisa redeem key.",
@@ -1248,7 +1270,6 @@ client.on("interactionCreate", async interaction => {
       .setColor(0x57F287)
       .setTimestamp();
 
-    // Berikan buyer role jika ada
     try {
       const cfg = readConfig();
       const buyerRoleId = cfg[interaction.guildId]?.buyerRole;
