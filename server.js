@@ -542,7 +542,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
       ? `${req.headers["x-forwarded-proto"]}://${req.get("host")}`
       : `${req.protocol}://${req.get("host")}`;
     const selfUrl = `${base}/api/loader/${scriptId}.lua`;
-    const luaLoader = `-- SpideyProtect Loader\nif not script_key then\n    error("[SpideyProtect] script_key is required. Set it before loading:\\n  script_key=\\"YOUR_KEY\\"")\nend\nlocal url = "${selfUrl}?key=" .. tostring(script_key)\nloadstring(game:HttpGet(url, true))()\n`;
+    const luaLoader = `-- SpideyProtect Loader\nif not script_key or tostring(script_key) == "" then\n    local plr = game:GetService("Players").LocalPlayer\n    if plr then\n        plr:Kick("\\n[SpideyProtect]\\nNO KEY PROVIDED\\n\\nMasukkan script_key sebelum menjalankan loader.")\n    end\n    return\nend\nlocal ok, hwid = pcall(function()\n    return game:GetService("RbxAnalyticsService"):GetClientId()\nend)\nif not ok then hwid = tostring(game:GetService("Players").LocalPlayer.UserId) end\nlocal url = "${selfUrl}?key=" .. tostring(script_key) .. "&hwid=" .. tostring(hwid)\nloadstring(game:HttpGet(url, true))()\n`;
     return res
       .status(200)
       .type("text/plain")
@@ -572,6 +572,28 @@ app.get("/api/loader/:id.lua", (req, res) => {
       .status(403)
       .type("text/plain")
       .send("-- SpideyProtect: Key not valid for this script");
+  }
+
+  // ── HWID CHECK ──
+  const clientHwid = req.query.hwid ? String(req.query.hwid).trim() : null;
+
+  if (keyData.hwid) {
+    // Key sudah punya HWID terdaftar — wajib cocok persis
+    if (!clientHwid || clientHwid !== keyData.hwid) {
+      return res
+        .status(403)
+        .type("text/plain")
+        .send('local plr = game:GetService("Players").LocalPlayer\nif plr then\n    plr:Kick("\\n[SpideyProtect]\\nHWID Mismatch Go Reset Your HWID\\n\\nDevice ini tidak terdaftar untuk key kamu.\\nGunakan tombol Reset HWID di panel Discord.")\nend');
+    }
+  } else if (clientHwid) {
+    // HWID belum pernah di-set — bind sekarang (pertama kali run loader)
+    const allKeys = readKeys();
+    const idx = allKeys.findIndex(k => k.key === keyData.key);
+    if (idx !== -1) {
+      allKeys[idx].hwid = clientHwid;
+      fs.writeFileSync(KEYS_FILE, JSON.stringify(allKeys, null, 2));
+    }
+    keyData.hwid = clientHwid;
   }
 
   const db = readDB();
