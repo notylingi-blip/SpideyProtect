@@ -302,12 +302,18 @@ app.get("/api/scripts/internal", (req, res) => {
   }
 
   const db = readDB();
+  const ownerId = req.query.ownerId;
+
+  const filtered = ownerId
+    ? db.filter(script => script.ownerId === ownerId)
+    : db;
 
   res.json(
-    db.map(script => ({
+    filtered.map(script => ({
       id: script.id,
       name: script.name,
-      enabled: script.enabled
+      enabled: script.enabled,
+      ownerId: script.ownerId
     }))
   );
 });
@@ -441,6 +447,13 @@ app.delete("/api/scripts/internal/:id", (req, res) => {
     return res.status(403).json({ error: "Forbidden" });
   }
 
+  // ownerId wajib dikirim bot untuk validasi ownership
+  const requestOwnerId = req.headers["x-owner-id"];
+
+  if (!requestOwnerId) {
+    return res.status(400).json({ error: "x-owner-id header required" });
+  }
+
   const db = readDB();
   const index = db.findIndex(x => x.id === req.params.id);
 
@@ -449,6 +462,12 @@ app.delete("/api/scripts/internal/:id", (req, res) => {
   }
 
   const script = db[index];
+
+  // Cek ownership - hanya owner yang bisa delete
+  if (script.ownerId !== requestOwnerId) {
+    return res.status(403).json({ error: "You do not own this script" });
+  }
+
   const filepath = path.join(SCRIPTS_DIR, script.filename);
 
   if (fs.existsSync(filepath)) {
