@@ -215,7 +215,11 @@ const commands = [
     .setDescription("Lihat info key/akses user")
     .addUserOption(opt =>
       opt.setName("user").setDescription("User yang mau dicek").setRequired(true)
-    )
+    ),
+
+  new SlashCommandBuilder()
+    .setName("deletescript")
+    .setDescription("Hapus script dari SpideyProtect")
 
 ].map(cmd => cmd.toJSON());
 
@@ -474,10 +478,6 @@ client.on("interactionCreate", async interaction => {
 
     const keys = readKeys();
 
-    const existing = keys.find(k => k.userId === targetUserId && !k.expiry || 
-      keys.find(k2 => k2.userId === targetUserId && k2.expiry && new Date(k2.expiry) > new Date())
-    );
-
     const key = generateKey();
     const hwid = generateHwid(targetUserId);
     const expiry = days === 0
@@ -687,6 +687,145 @@ client.on("interactionCreate", async interaction => {
 
   /*
   ------------------------------------------------
+   /deletescript
+  ------------------------------------------------
+  */
+
+  if (
+    interaction.isChatInputCommand() &&
+    interaction.commandName === "deletescript"
+  ) {
+
+    if (!hasPermission(interaction.member, interaction.guildId)) {
+      return interaction.reply({ content: "❌ Kamu tidak punya permission.", ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    const scripts = await getScripts();
+
+    if (scripts.length === 0) {
+      return interaction.editReply({ content: "❌ Belum ada script di SpideyProtect." });
+    }
+
+    const options = scripts.slice(0, 25).map(s =>
+      new StringSelectMenuOptionBuilder()
+        .setLabel(s.name)
+        .setValue(s.id)
+        .setDescription(`Status: ${s.enabled ? "Enabled" : "Disabled"}`)
+    );
+
+    const select = new StringSelectMenuBuilder()
+      .setCustomId("deletescript_select")
+      .setPlaceholder("Pilih script yang mau dihapus...")
+      .addOptions(options);
+
+    const row = new ActionRowBuilder().addComponents(select);
+
+    return interaction.editReply({
+      content: "⚠️ Pilih script yang mau dihapus. **Tindakan ini tidak bisa dibatalkan!**",
+      components: [row]
+    });
+  }
+
+  /*
+  ------------------------------------------------
+   SELECT MENU: deletescript_select
+  ------------------------------------------------
+  */
+
+  if (
+    interaction.isStringSelectMenu() &&
+    interaction.customId === "deletescript_select"
+  ) {
+
+    await interaction.deferReply({ ephemeral: true });
+
+    const scriptId = interaction.values[0];
+
+    // Konfirmasi dulu sebelum hapus
+    const confirmRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`confirmdelete:${scriptId}`)
+        .setLabel("Ya, Hapus Script Ini")
+        .setEmoji("🗑️")
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId("canceldelete")
+        .setLabel("Batal")
+        .setEmoji("✖️")
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    return interaction.editReply({
+      content: "⚠️ Yakin mau hapus script ini? Data tidak bisa dikembalikan!",
+      components: [confirmRow]
+    });
+  }
+
+  /*
+  ------------------------------------------------
+   BUTTON: confirmdelete
+  ------------------------------------------------
+  */
+
+  if (
+    interaction.isButton() &&
+    interaction.customId.startsWith("confirmdelete:")
+  ) {
+
+    if (!hasPermission(interaction.member, interaction.guildId)) {
+      return interaction.reply({ content: "❌ Kamu tidak punya permission.", ephemeral: true });
+    }
+
+    await interaction.deferUpdate();
+
+    const scriptId = interaction.customId.split(":")[1];
+
+    try {
+      const res = await axios.delete(
+        `${CONFIG.apiBase}/api/scripts/internal/${scriptId}`,
+        {
+          headers: { "x-api-secret": CONFIG.apiSecret }
+        }
+      );
+
+      const scriptName = res.data.name || scriptId;
+
+      const embed = new EmbedBuilder()
+        .setTitle("🗑️ Script Dihapus")
+        .setDescription(`Script **${scriptName}** berhasil dihapus dari SpideyProtect.`)
+        .setColor(0xED4245)
+        .setTimestamp()
+        .setFooter({ text: `Dihapus oleh ${interaction.user.username}` });
+
+      return interaction.editReply({ embeds: [embed], components: [] });
+
+    } catch (err) {
+      const status = err?.response?.status;
+      const msg = status === 404
+        ? "❌ Script tidak ditemukan."
+        : "❌ Gagal menghapus script. Coba lagi nanti.";
+
+      return interaction.editReply({ content: msg, components: [] });
+    }
+  }
+
+  /*
+  ------------------------------------------------
+   BUTTON: canceldelete
+  ------------------------------------------------
+  */
+
+  if (interaction.isButton() && interaction.customId === "canceldelete") {
+    return interaction.update({
+      content: "✅ Penghapusan dibatalkan.",
+      components: []
+    });
+  }
+
+  /*
+  ------------------------------------------------
    BUTTON: redeem_key
   ------------------------------------------------
   */
@@ -792,12 +931,7 @@ client.on("interactionCreate", async interaction => {
       });
     }
 
-    const scriptId = keyData.scriptId;
-    const loaderUrl = scriptId
-      ? `${CONFIG.apiBase}/api/execute/${scriptId}`
-      : `${CONFIG.apiBase}/api/execute/SCRIPT_ID`;
-
-    const loaderCode = `script_key="${keyData.key}";\nloadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${keyData.scriptId || "SCRIPT_ID"}.lua?key="..script_key))()`;
+    const loaderCode = `script_key="${keyData.key}";\nloadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${keyData.scriptId || "SCRIPT_ID"}.lua"))()`;
 
     const embed = new EmbedBuilder()
       .setTitle("📜 Script Loader")
