@@ -199,7 +199,7 @@ async function sendPanelEmbed(channel, title, description, scriptId, scriptName,
       .setEmoji("🔑")
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
-      .setCustomId(`get_script:${ownerId}`)
+      .setCustomId(`get_script:${ownerId}:${scriptId}`)
       .setLabel("Get Script")
       .setEmoji("📜")
       .setStyle(ButtonStyle.Primary)
@@ -251,7 +251,10 @@ client.on("interactionCreate", async interaction => {
       if (customId.startsWith("get_script:")) {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
-          const [, ownerId] = customId.split(":");
+          const parts = customId.split(":");
+          const ownerId = parts[1];
+          const scriptId = parts[2]; // scriptId spesifik panel ini
+
           const keys = readKeys();
           const userKeys = keys.filter(k => String(k.userId) === String(interaction.user.id));
 
@@ -259,12 +262,11 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ You don't have any active key!" }).catch(() => {});
           }
 
-          const myScripts = await getScriptsByOwner(ownerId);
-          const activeScriptIds = myScripts.map(s => s.id);
-          const validKey = userKeys.find(k => activeScriptIds.includes(k.scriptId));
+          // Cari key yang scriptId-nya cocok dengan panel ini
+          const validKey = userKeys.find(k => k.scriptId === scriptId);
 
           if (!validKey) {
-            return interaction.editReply({ content: "❌ Your key's script has been deleted or not found!" }).catch(() => {});
+            return interaction.editReply({ content: "❌ You don't have a key for this script!" }).catch(() => {});
           }
 
           const loaderCode = `script_key="${validKey.key}";\nloadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${validKey.scriptId}.lua"))()`;
