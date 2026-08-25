@@ -66,9 +66,11 @@ function hasPermission(member, guildId) {
   return member.roles.cache.has(roleId);
 }
 
-// Cached version of getScriptsByOwner
 const scriptCache = new Map();
-const CACHE_TTL = 30000; // 30 seconds
+const CACHE_TTL = 30000;
+
+// FIX: Simpan title/description sementara di sini supaya ga perlu masuk ke customId
+const panelTempData = new Map(); // key: userId, value: { title, description }
 
 async function getScriptsByOwner(ownerId) {
   const cacheKey = `scripts_${ownerId}`;
@@ -88,13 +90,11 @@ async function getScriptsByOwner(ownerId) {
     scriptCache.set(cacheKey, { data, timestamp: Date.now() });
     return data;
   } catch {
-    // Return cached data if available, even if expired
     if (cached) return cached.data;
     return [];
   }
 }
 
-// Clear cache function
 function clearCache(ownerId) {
   if (ownerId) {
     scriptCache.delete(`scripts_${ownerId}`);
@@ -183,9 +183,60 @@ client.once("ready", async () => {
   }
 });
 
+// Helper: buat dan kirim panel embed ke channel
+async function sendPanelEmbed(channel, title, description, scriptId, scriptName, ownerId, guildId) {
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(description)
+    .setColor(0x5865F2)
+    .setFooter({ text: `SpideyProtect • ${scriptName}` })
+    .setTimestamp();
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("redeem_key")
+      .setLabel("Redeem Key")
+      .setEmoji("🔑")
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`get_script:${ownerId}`)
+      .setLabel("Get Script")
+      .setEmoji("📜")
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("get_role")
+      .setLabel("Get Role")
+      .setEmoji("👤")
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId("reset_hwid")
+      .setLabel("Reset HWID")
+      .setEmoji("⚙️")
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("get_stats")
+      .setLabel("Get Stats")
+      .setEmoji("📊")
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  await channel.send({ embeds: [embed], components: [row1, row2, row3] });
+
+  const cfg = readConfig();
+  if (!cfg[guildId]) cfg[guildId] = {};
+  cfg[guildId].panelChannelId = channel.id;
+  cfg[guildId].panelScriptId = scriptId;
+  writeConfig(cfg);
+}
+
 client.on("interactionCreate", async interaction => {
   try {
-    // ==================== BLACKLIST CHECK ====================
     if (interaction.isButton() && isBlacklisted(interaction.user.id)) {
       return interaction.reply({ 
         content: "❌ You Have Been Blacklisted By The Owner", 
@@ -197,10 +248,8 @@ client.on("interactionCreate", async interaction => {
     if (interaction.isButton()) {
       const customId = interaction.customId;
 
-      // --- GET SCRIPT BUTTON ---
       if (customId.startsWith("get_script:")) {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
         try {
           const [, ownerId] = customId.split(":");
           const keys = readKeys();
@@ -212,7 +261,6 @@ client.on("interactionCreate", async interaction => {
 
           const myScripts = await getScriptsByOwner(ownerId);
           const activeScriptIds = myScripts.map(s => s.id);
-
           const validKey = userKeys.find(k => activeScriptIds.includes(k.scriptId));
 
           if (!validKey) {
@@ -227,7 +275,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- REDEEM KEY BUTTON ---
       if (customId === "redeem_key") {
         try {
           const modal = new ModalBuilder()
@@ -249,10 +296,8 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- GET ROLE BUTTON ---
       if (customId === "get_role") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
         try {
           const cfg = readConfig()[interaction.guildId] || {};
           const buyerRoleId = cfg.buyerRole;
@@ -281,10 +326,8 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- RESET HWID BUTTON ---
       if (customId === "reset_hwid") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
         try {
           const keys = readKeys();
           const userKeys = keys.filter(k => String(k.userId) === String(interaction.user.id));
@@ -314,10 +357,8 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- GET STATS BUTTON ---
       if (customId === "get_stats") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
         try {
           const keys = readKeys();
           const userKeys = keys.filter(k => String(k.userId) === String(interaction.user.id));
@@ -371,7 +412,6 @@ client.on("interactionCreate", async interaction => {
     // ==================== MODAL SUBMIT ====================
     if (interaction.isModalSubmit() && interaction.customId === "modal_redeem") {
       await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
       try {
         const keyInput = interaction.fields.getTextInputValue("input_key").toUpperCase().trim();
         const keys = readKeys();
@@ -409,10 +449,10 @@ client.on("interactionCreate", async interaction => {
 
     // ==================== SELECT MENU ====================
     if (interaction.isStringSelectMenu()) {
+
       // --- DELETE SCRIPT SELECT ---
       if (interaction.customId === "deletescript_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
         try {
           const scriptId = interaction.values[0];
 
@@ -426,8 +466,6 @@ client.on("interactionCreate", async interaction => {
           const keys = readKeys();
           const filteredKeys = keys.filter(k => k.scriptId !== scriptId);
           writeKeys(filteredKeys);
-
-          // Clear cache for this user
           clearCache(interaction.user.id);
 
           return interaction.editReply({ content: "✅ Script and all its keys have been permanently deleted!" }).catch(() => {});
@@ -438,13 +476,20 @@ client.on("interactionCreate", async interaction => {
       }
 
       // --- SETUP PANEL SELECT ---
+      // FIX: customId sekarang cuma "setuppanel_select", title/description diambil dari panelTempData
       if (interaction.customId === "setuppanel_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
         try {
-          const [, title, description] = interaction.customId.split(":").slice(1);
           const scriptId = interaction.values[0];
           
+          // Ambil title/description dari temp storage
+          const tempData = panelTempData.get(interaction.user.id);
+          if (!tempData) {
+            return interaction.editReply({ content: "❌ Session expired. Please run /setuppanel again." }).catch(() => {});
+          }
+          const { title, description } = tempData;
+          panelTempData.delete(interaction.user.id); // cleanup
+
           const myScripts = await getScriptsByOwner(interaction.user.id);
           const selectedScript = myScripts.find(s => s.id === scriptId);
           
@@ -452,58 +497,7 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ Script not found or not yours!" }).catch(() => {});
           }
 
-          const embed = new EmbedBuilder()
-            .setTitle(title)
-            .setDescription(description)
-            .setColor(0x5865F2)
-            .setFooter({ text: `SpideyProtect • ${selectedScript.name}` })
-            .setTimestamp();
-
-          const row1 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId("redeem_key")
-              .setLabel("Redeem Key")
-              .setEmoji("🔑")
-              .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-              .setCustomId(`get_script:${interaction.user.id}`)
-              .setLabel("Get Script")
-              .setEmoji("📜")
-              .setStyle(ButtonStyle.Primary)
-          );
-
-          const row2 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId("get_role")
-              .setLabel("Get Role")
-              .setEmoji("👤")
-              .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-              .setCustomId("reset_hwid")
-              .setLabel("Reset HWID")
-              .setEmoji("⚙️")
-              .setStyle(ButtonStyle.Secondary)
-          );
-
-          const row3 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId("get_stats")
-              .setLabel("Get Stats")
-              .setEmoji("📊")
-              .setStyle(ButtonStyle.Secondary)
-          );
-
-          await interaction.channel.send({ 
-            embeds: [embed], 
-            components: [row1, row2, row3] 
-          });
-
-          const cfg = readConfig();
-          if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
-          cfg[interaction.guildId].panelChannelId = interaction.channel.id;
-          cfg[interaction.guildId].panelScriptId = scriptId;
-          writeConfig(cfg);
-
+          await sendPanelEmbed(interaction.channel, title, description, scriptId, selectedScript.name, interaction.user.id, interaction.guildId);
           return interaction.editReply({ content: `✅ Panel created with script: **${selectedScript.name}**!` }).catch(() => {});
         } catch (err) {
           console.error("Setup panel select error:", err);
@@ -514,9 +508,12 @@ client.on("interactionCreate", async interaction => {
       // --- WHITELIST SELECT ---
       if (interaction.customId.startsWith("whitelist_select:")) {
         await interaction.deferReply({ ephemeral: false }).catch(() => {});
-
         try {
-          const [, targetType, targetId, daysStr, adminId] = interaction.customId.split(":");
+          const parts = interaction.customId.split(":");
+          const targetType = parts[1];
+          const targetId = parts[2];
+          const daysStr = parts[3];
+          const adminId = parts[4];
           const days = parseInt(daysStr);
           const scriptId = interaction.values[0];
 
@@ -535,15 +532,9 @@ client.on("interactionCreate", async interaction => {
           if (targetType === "user") {
             const key = generateKey();
             keys.push({ 
-              key, 
-              hwid: null, 
-              userId: String(targetId), 
-              username: null, 
-              scriptId, 
-              redeemedAt: new Date().toISOString(), 
-              expiry, 
-              createdAt: new Date().toISOString(), 
-              createdBy: adminId 
+              key, hwid: null, userId: String(targetId), username: null, scriptId, 
+              redeemedAt: new Date().toISOString(), expiry, 
+              createdAt: new Date().toISOString(), createdBy: adminId 
             });
             writeKeys(keys);
 
@@ -569,15 +560,9 @@ client.on("interactionCreate", async interaction => {
             for (const [, member] of members) {
               const userKey = generateKey();
               keys.push({ 
-                key: userKey, 
-                hwid: null, 
-                userId: String(member.id), 
-                username: member.user.username, 
-                scriptId, 
-                redeemedAt: new Date().toISOString(), 
-                expiry, 
-                createdAt: new Date().toISOString(), 
-                createdBy: adminId 
+                key: userKey, hwid: null, userId: String(member.id), username: member.user.username, 
+                scriptId, redeemedAt: new Date().toISOString(), expiry, 
+                createdAt: new Date().toISOString(), createdBy: adminId 
               });
               addedCount++;
               if (buyerRoleId) { 
@@ -600,11 +585,11 @@ client.on("interactionCreate", async interaction => {
       // --- GENKEY SELECT ---
       if (interaction.customId.startsWith("genkey_select:")) {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
         try {
-          const [, daysStr, amountStr, adminId] = interaction.customId.split(":");
-          const days = parseInt(daysStr);
-          const amount = parseInt(amountStr);
+          const parts = interaction.customId.split(":");
+          const days = parseInt(parts[1]);
+          const amount = parseInt(parts[2]);
+          const adminId = parts[3];
           const scriptId = interaction.values[0];
 
           const myScripts = await getScriptsByOwner(adminId);
@@ -620,15 +605,9 @@ client.on("interactionCreate", async interaction => {
           for (let i = 0; i < amount; i++) {
             const key = generateKey();
             keys.push({ 
-              key, 
-              hwid: null, 
-              userId: null, 
-              username: null, 
-              scriptId, 
-              redeemedAt: null, 
-              expiry, 
-              createdAt: new Date().toISOString(), 
-              createdBy: adminId 
+              key, hwid: null, userId: null, username: null, scriptId, 
+              redeemedAt: null, expiry, 
+              createdAt: new Date().toISOString(), createdBy: adminId 
             });
             generated.push(key);
           }
@@ -649,7 +628,6 @@ client.on("interactionCreate", async interaction => {
     if (interaction.isChatInputCommand()) {
       const commandName = interaction.commandName;
 
-      // --- CLEARCACHE ---
       if (commandName === "clearcache") {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ content: "❌ Admin only.", ephemeral: true }).catch(() => {});
@@ -658,7 +636,6 @@ client.on("interactionCreate", async interaction => {
         return interaction.reply({ content: "✅ Cache cleared successfully!", ephemeral: true }).catch(() => {});
       }
 
-      // --- WHITELISTROLE ---
       if (commandName === "whitelistrole") {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ content: "❌ Admin only.", ephemeral: true }).catch(() => {});
@@ -671,7 +648,6 @@ client.on("interactionCreate", async interaction => {
         return interaction.reply({ content: `✅ Role <@&${role.id}> is now the bot admin role.`, ephemeral: true }).catch(() => {});
       }
 
-      // --- SETBUYERROLE ---
       if (commandName === "setbuyerrole") {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ content: "❌ Admin only.", ephemeral: true }).catch(() => {});
@@ -690,79 +666,30 @@ client.on("interactionCreate", async interaction => {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
         }
 
-        // DEFER EARLY - CRITICAL!
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         
         try {
           const title = interaction.options.getString("title");
           const description = interaction.options.getString("description");
           
-          // Get scripts with cache
           const myScripts = await getScriptsByOwner(interaction.user.id);
           
           if (myScripts.length === 0) {
             return interaction.editReply({ content: "❌ You don't have any scripts yet." }).catch(() => {});
           }
 
-          // If only one script, auto-select
+          // Satu script: langsung buat panel
           if (myScripts.length === 1) {
-            const scriptId = myScripts[0].id;
-            const embed = new EmbedBuilder()
-              .setTitle(title)
-              .setDescription(description)
-              .setColor(0x5865F2)
-              .setFooter({ text: `SpideyProtect • ${myScripts[0].name}` })
-              .setTimestamp();
-
-            const row1 = new ActionRowBuilder().addComponents(
-              new ButtonBuilder()
-                .setCustomId("redeem_key")
-                .setLabel("Redeem Key")
-                .setEmoji("🔑")
-                .setStyle(ButtonStyle.Success),
-              new ButtonBuilder()
-                .setCustomId(`get_script:${interaction.user.id}`)
-                .setLabel("Get Script")
-                .setEmoji("📜")
-                .setStyle(ButtonStyle.Primary)
-            );
-
-            const row2 = new ActionRowBuilder().addComponents(
-              new ButtonBuilder()
-                .setCustomId("get_role")
-                .setLabel("Get Role")
-                .setEmoji("👤")
-                .setStyle(ButtonStyle.Primary),
-              new ButtonBuilder()
-                .setCustomId("reset_hwid")
-                .setLabel("Reset HWID")
-                .setEmoji("⚙️")
-                .setStyle(ButtonStyle.Secondary)
-            );
-
-            const row3 = new ActionRowBuilder().addComponents(
-              new ButtonBuilder()
-                .setCustomId("get_stats")
-                .setLabel("Get Stats")
-                .setEmoji("📊")
-                .setStyle(ButtonStyle.Secondary)
-            );
-
-            await interaction.channel.send({ 
-              embeds: [embed], 
-              components: [row1, row2, row3] 
-            });
-
-            const cfg = readConfig();
-            if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
-            cfg[interaction.guildId].panelChannelId = interaction.channel.id;
-            cfg[interaction.guildId].panelScriptId = scriptId;
-            writeConfig(cfg);
-
+            await sendPanelEmbed(interaction.channel, title, description, myScripts[0].id, myScripts[0].name, interaction.user.id, interaction.guildId);
             return interaction.editReply({ content: `✅ Panel created with script: **${myScripts[0].name}**!` }).catch(() => {});
           }
 
-          // Multiple scripts - show selection menu
+          // Banyak script: simpan title/description ke temp, tampilkan dropdown
+          panelTempData.set(interaction.user.id, { title, description });
+
+          // Auto cleanup setelah 5 menit
+          setTimeout(() => panelTempData.delete(interaction.user.id), 5 * 60 * 1000);
+
           const options = myScripts.slice(0, 25).map(s => 
             new StringSelectMenuOptionBuilder()
               .setLabel(s.name.length > 50 ? s.name.slice(0, 47) + "..." : s.name)
@@ -770,7 +697,7 @@ client.on("interactionCreate", async interaction => {
           );
 
           const select = new StringSelectMenuBuilder()
-            .setCustomId(`setuppanel_select:${title}:${description}`)
+            .setCustomId("setuppanel_select")  // FIX: customId simpel, data ada di panelTempData
             .setPlaceholder("Select a script for this panel...")
             .addOptions(options);
 
@@ -790,7 +717,6 @@ client.on("interactionCreate", async interaction => {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
         }
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
         try {
           const myScripts = await getScriptsByOwner(interaction.user.id);
           if (myScripts.length === 0) {
@@ -824,7 +750,6 @@ client.on("interactionCreate", async interaction => {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
         }
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
         try {
           const targetUser = interaction.options.getUser("user");
           const targetRole = interaction.options.getRole("role");
@@ -842,7 +767,6 @@ client.on("interactionCreate", async interaction => {
           const targetType = targetUser ? "user" : "role";
           const targetId = targetUser ? targetUser.id : targetRole.id;
 
-          // If only one script, auto-select without dropdown
           if (myScripts.length === 1) {
             const scriptId = myScripts[0].id;
             const keys = readKeys();
@@ -854,15 +778,9 @@ client.on("interactionCreate", async interaction => {
             if (targetUser) {
               const key = generateKey();
               keys.push({ 
-                key, 
-                hwid: null, 
-                userId: String(targetUser.id), 
-                username: targetUser.username, 
-                scriptId, 
-                redeemedAt: new Date().toISOString(), 
-                expiry, 
-                createdAt: new Date().toISOString(), 
-                createdBy: interaction.user.id 
+                key, hwid: null, userId: String(targetUser.id), username: targetUser.username, scriptId, 
+                redeemedAt: new Date().toISOString(), expiry, 
+                createdAt: new Date().toISOString(), createdBy: interaction.user.id 
               });
               writeKeys(keys);
 
@@ -888,15 +806,9 @@ client.on("interactionCreate", async interaction => {
               for (const [, member] of members) {
                 const userKey = generateKey();
                 keys.push({ 
-                  key: userKey, 
-                  hwid: null, 
-                  userId: String(member.id), 
-                  username: member.user.username, 
-                  scriptId, 
-                  redeemedAt: new Date().toISOString(), 
-                  expiry, 
-                  createdAt: new Date().toISOString(), 
-                  createdBy: interaction.user.id 
+                  key: userKey, hwid: null, userId: String(member.id), username: member.user.username, 
+                  scriptId, redeemedAt: new Date().toISOString(), expiry, 
+                  createdAt: new Date().toISOString(), createdBy: interaction.user.id 
                 });
                 addedCount++;
                 if (buyerRoleId) { 
@@ -912,7 +824,6 @@ client.on("interactionCreate", async interaction => {
             }
           }
 
-          // Multiple scripts - show selection menu
           const options = myScripts.slice(0, 25).map(s => 
             new StringSelectMenuOptionBuilder()
               .setLabel(s.name.length > 50 ? s.name.slice(0, 47) + "..." : s.name)
@@ -940,7 +851,6 @@ client.on("interactionCreate", async interaction => {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
         }
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
         try {
           const targetUser = interaction.options.getUser("user");
           const reason = interaction.options.getString("reason") || "No reason";
@@ -951,11 +861,8 @@ client.on("interactionCreate", async interaction => {
           }
 
           bl.push({ 
-            userId: String(targetUser.id), 
-            username: targetUser.username, 
-            reason, 
-            blacklistedBy: interaction.user.id, 
-            blacklistedAt: new Date().toISOString() 
+            userId: String(targetUser.id), username: targetUser.username, reason, 
+            blacklistedBy: interaction.user.id, blacklistedAt: new Date().toISOString() 
           });
           writeBlacklist(bl);
 
@@ -986,7 +893,6 @@ client.on("interactionCreate", async interaction => {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
         }
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
         try {
           const targetUser = interaction.options.getUser("user");
           const bl = readBlacklist();
@@ -1011,7 +917,6 @@ client.on("interactionCreate", async interaction => {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
         }
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
         try {
           const days = interaction.options.getInteger("days");
           const amount = interaction.options.getInteger("amount") || 1;
@@ -1034,15 +939,9 @@ client.on("interactionCreate", async interaction => {
             for (let i = 0; i < amount; i++) {
               const key = generateKey();
               keys.push({ 
-                key, 
-                hwid: null, 
-                userId: null, 
-                username: null, 
-                scriptId, 
-                redeemedAt: null, 
-                expiry, 
-                createdAt: new Date().toISOString(), 
-                createdBy: interaction.user.id 
+                key, hwid: null, userId: null, username: null, scriptId, 
+                redeemedAt: null, expiry, 
+                createdAt: new Date().toISOString(), createdBy: interaction.user.id 
               });
               generated.push(key);
             }
@@ -1081,7 +980,6 @@ client.on("interactionCreate", async interaction => {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
         }
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
         try {
           const key = interaction.options.getString("key");
           const targetUser = interaction.options.getUser("user");
@@ -1121,7 +1019,6 @@ client.on("interactionCreate", async interaction => {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
         }
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
         try {
           const keys = readKeys();
           const myScripts = await getScriptsByOwner(interaction.user.id);
@@ -1171,7 +1068,6 @@ client.on("interactionCreate", async interaction => {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
         }
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
         try {
           const targetUser = interaction.options.getUser("user");
           const member = await interaction.guild.members.fetch(targetUser.id);
@@ -1220,7 +1116,6 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
-// Global error handler
 process.on("unhandledRejection", (error) => {
   console.error("❌ Unhandled rejection:", error);
 });
