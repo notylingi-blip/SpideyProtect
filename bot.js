@@ -31,11 +31,13 @@ const DATA_DIR = path.join(__dirname, "data");
 const KEYS_FILE = path.join(DATA_DIR, "keys.json");
 const CONFIG_FILE = path.join(DATA_DIR, "botconfig.json");
 const BLACKLIST_FILE = path.join(DATA_DIR, "blacklist.json");
+const CACHE_FILE = path.join(DATA_DIR, "cache.json");
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(KEYS_FILE)) fs.writeFileSync(KEYS_FILE, "[]", "utf8");
 if (!fs.existsSync(CONFIG_FILE)) fs.writeFileSync(CONFIG_FILE, "{}", "utf8");
 if (!fs.existsSync(BLACKLIST_FILE)) fs.writeFileSync(BLACKLIST_FILE, "[]", "utf8");
+if (!fs.existsSync(CACHE_FILE)) fs.writeFileSync(CACHE_FILE, "{}", "utf8");
 
 function readKeys() { try { return JSON.parse(fs.readFileSync(KEYS_FILE, "utf8")); } catch { return []; } }
 function writeKeys(data) { fs.writeFileSync(KEYS_FILE, JSON.stringify(data, null, 2)); }
@@ -43,6 +45,8 @@ function readConfig() { try { return JSON.parse(fs.readFileSync(CONFIG_FILE, "ut
 function writeConfig(data) { fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2)); }
 function readBlacklist() { try { return JSON.parse(fs.readFileSync(BLACKLIST_FILE, "utf8")); } catch { return []; } }
 function writeBlacklist(data) { fs.writeFileSync(BLACKLIST_FILE, JSON.stringify(data, null, 2)); }
+function readCache() { try { return JSON.parse(fs.readFileSync(CACHE_FILE, "utf8")); } catch { return {}; } }
+function writeCache(data) { fs.writeFileSync(CACHE_FILE, JSON.stringify(data, null, 2)); }
 
 function isBlacklisted(userId) {
   const bl = readBlacklist();
@@ -62,16 +66,40 @@ function hasPermission(member, guildId) {
   return member.roles.cache.has(roleId);
 }
 
+// Cached version of getScriptsByOwner
+const scriptCache = new Map();
+const CACHE_TTL = 30000; // 30 seconds
+
 async function getScriptsByOwner(ownerId) {
+  const cacheKey = `scripts_${ownerId}`;
+  const cached = scriptCache.get(cacheKey);
+  
+  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+    return cached.data;
+  }
+
   try {
     const res = await axios.get(`${CONFIG.apiBase}/api/scripts/internal`, {
       headers: { "x-api-secret": CONFIG.apiSecret },
       params: { ownerId },
-      timeout: 8000
+      timeout: 5000
     });
-    return res.data || [];
+    const data = res.data || [];
+    scriptCache.set(cacheKey, { data, timestamp: Date.now() });
+    return data;
   } catch {
+    // Return cached data if available, even if expired
+    if (cached) return cached.data;
     return [];
+  }
+}
+
+// Clear cache function
+function clearCache(ownerId) {
+  if (ownerId) {
+    scriptCache.delete(`scripts_${ownerId}`);
+  } else {
+    scriptCache.clear();
   }
 }
 
@@ -137,7 +165,12 @@ const commands = [
   
   new SlashCommandBuilder()
     .setName("deletescript")
-    .setDescription("Delete your script from SpideyProtect")
+    .setDescription("Delete your script from SpideyProtect"),
+  
+  new SlashCommandBuilder()
+    .setName("clearcache")
+    .setDescription("Clear script cache (admin only)")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 ].map(c => c.toJSON());
 
 client.once("ready", async () => {
@@ -394,6 +427,9 @@ client.on("interactionCreate", async interaction => {
           const filteredKeys = keys.filter(k => k.scriptId !== scriptId);
           writeKeys(filteredKeys);
 
+          // Clear cache for this user
+          clearCache(interaction.user.id);
+
           return interaction.editReply({ content: "✅ Script and all its keys have been permanently deleted!" }).catch(() => {});
         } catch (err) {
           console.error("Delete script error:", err);
@@ -613,6 +649,15 @@ client.on("interactionCreate", async interaction => {
     if (interaction.isChatInputCommand()) {
       const commandName = interaction.commandName;
 
+      // --- CLEARCACHE ---
+      if (commandName === "clearcache") {
+        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ content: "❌ Admin only.", ephemeral: true }).catch(() => {});
+        }
+        clearCache();
+        return interaction.reply({ content: "✅ Cache cleared successfully!", ephemeral: true }).catch(() => {});
+      }
+
       // --- WHITELISTROLE ---
       if (commandName === "whitelistrole") {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
@@ -645,13 +690,14 @@ client.on("interactionCreate", async interaction => {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
         }
 
-        // DEFER EARLY to prevent timeout
+        // DEFER EARLY - CRITICAL!
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         
         try {
           const title = interaction.options.getString("title");
           const description = interaction.options.getString("description");
           
+          // Get scripts with cache
           const myScripts = await getScriptsByOwner(interaction.user.id);
           
           if (myScripts.length === 0) {
