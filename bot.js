@@ -69,8 +69,9 @@ function hasPermission(member, guildId) {
 const scriptCache = new Map();
 const CACHE_TTL = 30000;
 
-// FIX: Simpan title/description sementara di sini supaya ga perlu masuk ke customId
-const panelTempData = new Map(); // key: userId, value: { title, description }
+const panelTempData = new Map();
+const buyerRoleTempData = new Map();
+const freeModeTempData = new Map();
 
 async function getScriptsByOwner(ownerId) {
   const cacheKey = `scripts_${ownerId}`;
@@ -91,6 +92,18 @@ async function getScriptsByOwner(ownerId) {
     return data;
   } catch {
     if (cached) return cached.data;
+    return [];
+  }
+}
+
+async function getAllScripts() {
+  try {
+    const res = await axios.get(`${CONFIG.apiBase}/api/scripts/internal`, {
+      headers: { "x-api-secret": CONFIG.apiSecret },
+      timeout: 5000
+    });
+    return res.data || [];
+  } catch {
     return [];
   }
 }
@@ -120,7 +133,7 @@ const commands = [
   
   new SlashCommandBuilder()
     .setName("setbuyerrole")
-    .setDescription("Set buyer role")
+    .setDescription("Set buyer role for specific script")
     .addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   
@@ -168,6 +181,10 @@ const commands = [
     .setDescription("Delete your script from SpideyProtect"),
   
   new SlashCommandBuilder()
+    .setName("freemode")
+    .setDescription("Enable or disable free mode for a script"),
+  
+  new SlashCommandBuilder()
     .setName("clearcache")
     .setDescription("Clear script cache (admin only)")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
@@ -183,7 +200,6 @@ client.once("ready", async () => {
   }
 });
 
-// Helper: buat dan kirim panel embed ke channel
 async function sendPanelEmbed(channel, title, description, scriptId, scriptName, ownerId, guildId) {
   const embed = new EmbedBuilder()
     .setTitle(title)
@@ -253,7 +269,7 @@ client.on("interactionCreate", async interaction => {
         try {
           const parts = customId.split(":");
           const ownerId = parts[1];
-          const scriptId = parts[2]; // scriptId spesifik panel ini
+          const scriptId = parts[2];
 
           const keys = readKeys();
           const userKeys = keys.filter(k => String(k.userId) === String(interaction.user.id));
@@ -262,7 +278,6 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ You don't have any active key!" }).catch(() => {});
           }
 
-          // Cari key yang scriptId-nya cocok dengan panel ini
           const validKey = userKeys.find(k => k.scriptId === scriptId);
 
           if (!validKey) {
@@ -303,10 +318,13 @@ client.on("interactionCreate", async interaction => {
         try {
           const scriptId = customId.includes(":") ? customId.split(":")[1] : null;
           const cfg = readConfig()[interaction.guildId] || {};
-          const buyerRoleId = cfg.buyerRole;
+          
+          const buyerRoleId = scriptId && cfg.buyerRoles && cfg.buyerRoles[scriptId] 
+            ? cfg.buyerRoles[scriptId] 
+            : cfg.buyerRole;
 
           if (!buyerRoleId) {
-            return interaction.editReply({ content: "❌ Buyer role has not been set by admin!" }).catch(() => {});
+            return interaction.editReply({ content: "❌ Buyer role has not been set for this script!" }).catch(() => {});
           }
 
           const keys = readKeys();
@@ -316,7 +334,6 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ You don't have a key! Redeem or get whitelisted first." }).catch(() => {});
           }
 
-          // Kalau ada scriptId (panel baru), validasi key harus untuk script ini
           if (scriptId) {
             const validKey = userKeys.find(k => k.scriptId === scriptId);
             if (!validKey) {
@@ -343,7 +360,6 @@ client.on("interactionCreate", async interaction => {
           const scriptId = customId.includes(":") ? customId.split(":")[1] : null;
           const keys = readKeys();
 
-          // Cek dulu user punya key untuk script panel ini
           const userKeys = keys.filter(k => String(k.userId) === String(interaction.user.id));
           if (userKeys.length === 0) {
             return interaction.editReply({ content: "❌ You don't have any active key!" }).catch(() => {});
@@ -358,7 +374,6 @@ client.on("interactionCreate", async interaction => {
 
           let resetCount = 0;
           const updatedKeys = keys.map(k => {
-            // Reset hanya key milik user untuk script panel ini
             const isOwner = String(k.userId) === String(interaction.user.id);
             const isScript = scriptId ? k.scriptId === scriptId : true;
             if (isOwner && isScript && k.hwid) {
@@ -391,7 +406,6 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ You don't have any active key!" }).catch(() => {});
           }
 
-          // Validasi: user harus punya key untuk script panel ini
           if (scriptId) {
             const validKey = userKeys.find(k => k.scriptId === scriptId);
             if (!validKey) {
@@ -399,11 +413,8 @@ client.on("interactionCreate", async interaction => {
             }
           }
 
-          // Cuma tampil key yang relevan dengan script panel ini
           const relevantKeys = scriptId ? userKeys.filter(k => k.scriptId === scriptId) : userKeys;
 
-          // Ambil nama script dari owner script ini (bukan dari user yang klik)
-          // scriptId sudah diketahui, ambil nama dari API
           let scriptName = "Unknown Script";
           if (scriptId) {
             try {
@@ -473,10 +484,14 @@ client.on("interactionCreate", async interaction => {
         writeKeys(keys);
 
         const cfg = readConfig()[interaction.guildId] || {};
-        if (cfg.buyerRole) {
+        const buyerRoleId = cfg.buyerRoles && cfg.buyerRoles[keyData.scriptId] 
+          ? cfg.buyerRoles[keyData.scriptId] 
+          : cfg.buyerRole;
+
+        if (buyerRoleId) {
           try {
             const member = await interaction.guild.members.fetch(interaction.user.id);
-            await member.roles.add(cfg.buyerRole);
+            await member.roles.add(buyerRoleId);
           } catch (err) {
             console.error("Failed to add buyer role:", err);
           }
@@ -517,20 +532,85 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- FREEMODE SELECT ---
+      if (interaction.customId === "freemode_select") {
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
+        try {
+          const scriptId = interaction.values[0];
+          const tempData = freeModeTempData.get(interaction.user.id);
+          
+          if (!tempData) {
+            return interaction.editReply({ content: "❌ Session expired. Please run /freemode again." }).catch(() => {});
+          }
+
+          const { mode } = tempData;
+          freeModeTempData.delete(interaction.user.id);
+
+          const cfg = readConfig();
+          if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
+          if (!cfg[interaction.guildId].freeMode) cfg[interaction.guildId].freeMode = {};
+
+          if (mode === "enable") {
+            cfg[interaction.guildId].freeMode[scriptId] = true;
+            writeConfig(cfg);
+            return interaction.editReply({ content: `✅ Free mode has been **ENABLED** for the selected script!` }).catch(() => {});
+          } else if (mode === "disable") {
+            delete cfg[interaction.guildId].freeMode[scriptId];
+            writeConfig(cfg);
+            return interaction.editReply({ content: `✅ Free mode has been **DISABLED** for the selected script!` }).catch(() => {});
+          }
+        } catch (err) {
+          console.error("Freemode select error:", err);
+          return interaction.editReply({ content: "❌ Failed to update free mode. Please try again." }).catch(() => {});
+        }
+      }
+
+      // --- FREEMODE MODE SELECT ---
+      if (interaction.customId === "freemode_mode_select") {
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
+        try {
+          const mode = interaction.values[0];
+          const myScripts = await getScriptsByOwner(interaction.user.id);
+          
+          if (myScripts.length === 0) {
+            return interaction.editReply({ content: "❌ You don't have any scripts yet." }).catch(() => {});
+          }
+
+          freeModeTempData.set(interaction.user.id, { mode });
+
+          const options = myScripts.slice(0, 25).map(s => 
+            new StringSelectMenuOptionBuilder()
+              .setLabel(s.name.length > 50 ? s.name.slice(0, 47) + "..." : s.name)
+              .setValue(s.id)
+          );
+
+          const select = new StringSelectMenuBuilder()
+            .setCustomId("freemode_select")
+            .setPlaceholder("Select a script...")
+            .addOptions(options);
+
+          return interaction.editReply({ 
+            content: `Select a script to ${mode} free mode:`, 
+            components: [new ActionRowBuilder().addComponents(select)] 
+          }).catch(() => {});
+        } catch (err) {
+          console.error("Freemode mode select error:", err);
+          return interaction.editReply({ content: "❌ Failed to load scripts. Please try again." }).catch(() => {});
+        }
+      }
+
       // --- SETUP PANEL SELECT ---
-      // FIX: customId sekarang cuma "setuppanel_select", title/description diambil dari panelTempData
       if (interaction.customId === "setuppanel_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
           const scriptId = interaction.values[0];
           
-          // Ambil title/description dari temp storage
           const tempData = panelTempData.get(interaction.user.id);
           if (!tempData) {
             return interaction.editReply({ content: "❌ Session expired. Please run /setuppanel again." }).catch(() => {});
           }
           const { title, description } = tempData;
-          panelTempData.delete(interaction.user.id); // cleanup
+          panelTempData.delete(interaction.user.id);
 
           const myScripts = await getScriptsByOwner(interaction.user.id);
           const selectedScript = myScripts.find(s => s.id === scriptId);
@@ -544,6 +624,34 @@ client.on("interactionCreate", async interaction => {
         } catch (err) {
           console.error("Setup panel select error:", err);
           return interaction.editReply({ content: "❌ Failed to create panel. Please try again." }).catch(() => {});
+        }
+      }
+
+      // --- SET BUYER ROLE SELECT ---
+      if (interaction.customId === "setbuyerrole_select") {
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
+        try {
+          const scriptId = interaction.values[0];
+          const tempData = buyerRoleTempData.get(interaction.user.id);
+          
+          if (!tempData) {
+            return interaction.editReply({ content: "❌ Session expired. Please run /setbuyerrole again." }).catch(() => {});
+          }
+
+          const { roleId } = tempData;
+          buyerRoleTempData.delete(interaction.user.id);
+
+          const cfg = readConfig();
+          if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
+          if (!cfg[interaction.guildId].buyerRoles) cfg[interaction.guildId].buyerRoles = {};
+          
+          cfg[interaction.guildId].buyerRoles[scriptId] = roleId;
+          writeConfig(cfg);
+
+          return interaction.editReply({ content: `✅ Buyer role <@&${roleId}> has been set for the selected script!` }).catch(() => {});
+        } catch (err) {
+          console.error("Set buyer role select error:", err);
+          return interaction.editReply({ content: "❌ Failed to set buyer role. Please try again." }).catch(() => {});
         }
       }
 
@@ -561,6 +669,7 @@ client.on("interactionCreate", async interaction => {
 
           const myScripts = await getScriptsByOwner(adminId);
           const owned = myScripts.find(s => s.id === scriptId);
+          
           if (!owned) {
             return interaction.editReply({ content: "❌ This script is not yours." }).catch(() => {});
           }
@@ -568,7 +677,11 @@ client.on("interactionCreate", async interaction => {
           const keys = readKeys();
           const expiry = days === 0 ? null : new Date(Date.now() + days * 86400000).toISOString();
           const cfg = readConfig()[interaction.guildId] || {};
-          const buyerRoleId = cfg.buyerRole;
+          
+          const buyerRoleId = cfg.buyerRoles && cfg.buyerRoles[scriptId] 
+            ? cfg.buyerRoles[scriptId] 
+            : cfg.buyerRole;
+          
           const panelChannelId = cfg.panelChannelId;
 
           if (targetType === "user") {
@@ -690,16 +803,69 @@ client.on("interactionCreate", async interaction => {
         return interaction.reply({ content: `✅ Role <@&${role.id}> is now the bot admin role.`, ephemeral: true }).catch(() => {});
       }
 
+      // --- SETBUYERROLE ---
       if (commandName === "setbuyerrole") {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ content: "❌ Admin only.", ephemeral: true }).catch(() => {});
         }
-        const role = interaction.options.getRole("role");
-        const cfg = readConfig();
-        if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
-        cfg[interaction.guildId].buyerRole = role.id;
-        writeConfig(cfg);
-        return interaction.reply({ content: `✅ Buyer role set to <@&${role.id}>!`, ephemeral: true }).catch(() => {});
+        
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
+        
+        try {
+          const role = interaction.options.getRole("role");
+          
+          const allScripts = await getAllScripts();
+          
+          if (allScripts.length === 0) {
+            return interaction.editReply({ content: "❌ No scripts found in the database." }).catch(() => {});
+          }
+
+          // Filter scripts that exist in this guild's config
+          const cfg = readConfig()[interaction.guildId] || {};
+          const guildScripts = allScripts.filter(s => {
+            return cfg.panelScriptId === s.id || Object.keys(cfg.buyerRoles || {}).includes(s.id);
+          });
+
+          const scriptsToShow = guildScripts.length > 0 ? guildScripts : allScripts;
+
+          if (scriptsToShow.length === 1) {
+            const scriptId = scriptsToShow[0].id;
+            const cfgUpdate = readConfig();
+            if (!cfgUpdate[interaction.guildId]) cfgUpdate[interaction.guildId] = {};
+            if (!cfgUpdate[interaction.guildId].buyerRoles) cfgUpdate[interaction.guildId].buyerRoles = {};
+            
+            cfgUpdate[interaction.guildId].buyerRoles[scriptId] = role.id;
+            writeConfig(cfgUpdate);
+
+            return interaction.editReply({ 
+              content: `✅ Buyer role <@&${role.id}> has been set for script **${scriptsToShow[0].name}**!` 
+            }).catch(() => {});
+          }
+
+          buyerRoleTempData.set(interaction.user.id, { roleId: role.id });
+
+          // Sort scripts alphabetically
+          const sortedScripts = scriptsToShow.sort((a, b) => a.name.localeCompare(b.name));
+
+          const options = sortedScripts.slice(0, 25).map(s => 
+            new StringSelectMenuOptionBuilder()
+              .setLabel(s.name.length > 50 ? s.name.slice(0, 47) + "..." : s.name)
+              .setValue(s.id)
+          );
+
+          const select = new StringSelectMenuBuilder()
+            .setCustomId("setbuyerrole_select")
+            .setPlaceholder("Select a script...")
+            .addOptions(options);
+
+          return interaction.editReply({ 
+            content: `Select a script to assign buyer role <@&${role.id}>:`, 
+            components: [new ActionRowBuilder().addComponents(select)] 
+          }).catch(() => {});
+        } catch (err) {
+          console.error("Set buyer role error:", err);
+          return interaction.editReply({ content: "❌ Failed to set buyer role. Please try again." }).catch(() => {});
+        }
       }
 
       // --- SETUPPANEL ---
@@ -720,26 +886,26 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ You don't have any scripts yet." }).catch(() => {});
           }
 
-          // Satu script: langsung buat panel
           if (myScripts.length === 1) {
             await sendPanelEmbed(interaction.channel, title, description, myScripts[0].id, myScripts[0].name, interaction.user.id, interaction.guildId);
             return interaction.editReply({ content: `✅ Panel created with script: **${myScripts[0].name}**!` }).catch(() => {});
           }
 
-          // Banyak script: simpan title/description ke temp, tampilkan dropdown
           panelTempData.set(interaction.user.id, { title, description });
 
-          // Auto cleanup setelah 5 menit
           setTimeout(() => panelTempData.delete(interaction.user.id), 5 * 60 * 1000);
 
-          const options = myScripts.slice(0, 25).map(s => 
+          // Sort scripts alphabetically
+          const sortedScripts = myScripts.sort((a, b) => a.name.localeCompare(b.name));
+
+          const options = sortedScripts.slice(0, 25).map(s => 
             new StringSelectMenuOptionBuilder()
               .setLabel(s.name.length > 50 ? s.name.slice(0, 47) + "..." : s.name)
               .setValue(s.id)
           );
 
           const select = new StringSelectMenuBuilder()
-            .setCustomId("setuppanel_select")  // FIX: customId simpel, data ada di panelTempData
+            .setCustomId("setuppanel_select")
             .setPlaceholder("Select a script for this panel...")
             .addOptions(options);
 
@@ -765,7 +931,10 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ You don't have any scripts yet." }).catch(() => {});
           }
 
-          const options = myScripts.slice(0, 25).map(s => 
+          // Sort scripts alphabetically
+          const sortedScripts = myScripts.sort((a, b) => a.name.localeCompare(b.name));
+
+          const options = sortedScripts.slice(0, 25).map(s => 
             new StringSelectMenuOptionBuilder()
               .setLabel(s.name.length > 50 ? s.name.slice(0, 47) + "..." : s.name)
               .setValue(s.id)
@@ -783,6 +952,43 @@ client.on("interactionCreate", async interaction => {
         } catch (err) {
           console.error("Delete script command error:", err);
           return interaction.editReply({ content: "❌ Failed to load scripts. Please try again." }).catch(() => {});
+        }
+      }
+
+      // --- FREEMODE ---
+      if (commandName === "freemode") {
+        if (!hasPermission(interaction.member, interaction.guildId)) {
+          return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
+        }
+        
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
+        
+        try {
+          const options = [
+            new StringSelectMenuOptionBuilder()
+              .setLabel("Enable Free Mode")
+              .setDescription("Allow all users to use the script without key")
+              .setValue("enable")
+              .setEmoji("✅"),
+            new StringSelectMenuOptionBuilder()
+              .setLabel("Disable Free Mode")
+              .setDescription("Require key to use the script")
+              .setValue("disable")
+              .setEmoji("❌")
+          ];
+
+          const select = new StringSelectMenuBuilder()
+            .setCustomId("freemode_mode_select")
+            .setPlaceholder("Select mode...")
+            .addOptions(options);
+
+          return interaction.editReply({ 
+            content: "Select whether to enable or disable free mode:", 
+            components: [new ActionRowBuilder().addComponents(select)] 
+          }).catch(() => {});
+        } catch (err) {
+          console.error("Freemode error:", err);
+          return interaction.editReply({ content: "❌ Failed to open freemode menu. Please try again." }).catch(() => {});
         }
       }
 
@@ -814,7 +1020,11 @@ client.on("interactionCreate", async interaction => {
             const keys = readKeys();
             const expiry = days === 0 ? null : new Date(Date.now() + days * 86400000).toISOString();
             const cfg = readConfig()[interaction.guildId] || {};
-            const buyerRoleId = cfg.buyerRole;
+            
+            const buyerRoleId = cfg.buyerRoles && cfg.buyerRoles[scriptId] 
+              ? cfg.buyerRoles[scriptId] 
+              : cfg.buyerRole;
+            
             const panelChannelId = cfg.panelChannelId;
 
             if (targetUser) {
@@ -866,9 +1076,12 @@ client.on("interactionCreate", async interaction => {
             }
           }
 
-          // Kalau banyak script, dropdown ini ephemeral aja biar gak rame
-          await interaction.editReply({ content: "_ _" }).catch(() => {}); // hapus pesan publik kosong
-          const options = myScripts.slice(0, 25).map(s => 
+          await interaction.editReply({ content: "_ _" }).catch(() => {});
+          
+          // Sort scripts alphabetically
+          const sortedScripts = myScripts.sort((a, b) => a.name.localeCompare(b.name));
+
+          const options = sortedScripts.slice(0, 25).map(s => 
             new StringSelectMenuOptionBuilder()
               .setLabel(s.name.length > 50 ? s.name.slice(0, 47) + "..." : s.name)
               .setValue(s.id)
@@ -998,7 +1211,10 @@ client.on("interactionCreate", async interaction => {
             }).catch(() => {});
           }
 
-          const options = myScripts.slice(0, 25).map(s => 
+          // Sort scripts alphabetically
+          const sortedScripts = myScripts.sort((a, b) => a.name.localeCompare(b.name));
+
+          const options = sortedScripts.slice(0, 25).map(s => 
             new StringSelectMenuOptionBuilder()
               .setLabel(s.name.length > 50 ? s.name.slice(0, 47) + "..." : s.name)
               .setValue(s.id)
@@ -1080,7 +1296,14 @@ client.on("interactionCreate", async interaction => {
           let used = 0;
           let unused = 0;
 
-          myKeys.slice(0, 25).forEach(k => {
+          // Sort keys by script name
+          const sortedKeys = myKeys.sort((a, b) => {
+            const nameA = scriptMap[a.scriptId] || "";
+            const nameB = scriptMap[b.scriptId] || "";
+            return nameA.localeCompare(nameB);
+          });
+
+          sortedKeys.slice(0, 25).forEach(k => {
             const scriptName = scriptMap[k.scriptId] || "❓ Script deleted";
             const status = k.userId ? `✅ Used by <@${k.userId}>` : "⏳ Unused";
             const expiryText = k.expiry ? new Date(k.expiry).toLocaleDateString() : "♾️ Lifetime";
@@ -1123,7 +1346,8 @@ client.on("interactionCreate", async interaction => {
           const isBlacklisted_ = isBlacklisted(targetUser.id);
           const hasBuyerRole = member.roles.cache.some(r => {
             const cfg = readConfig()[interaction.guildId] || {};
-            return r.id === cfg.buyerRole;
+            const buyerRoles = Object.values(cfg.buyerRoles || {});
+            return buyerRoles.includes(r.id) || r.id === cfg.buyerRole;
           });
 
           const embed = new EmbedBuilder()
