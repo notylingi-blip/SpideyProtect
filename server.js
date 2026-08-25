@@ -12,6 +12,7 @@ const DATA_DIR = path.join(__dirname, "data");
 const SCRIPTS_DIR = path.join(DATA_DIR, "scripts");
 const DB_FILE = path.join(DATA_DIR, "scripts.json");
 const KEYS_FILE = path.join(DATA_DIR, "keys.json");
+const BOT_CONFIG_FILE = path.join(DATA_DIR, "botconfig.json");
 
 fs.mkdirSync(SCRIPTS_DIR, { recursive: true });
 
@@ -21,6 +22,10 @@ if (!fs.existsSync(DB_FILE)) {
 
 if (!fs.existsSync(KEYS_FILE)) {
   fs.writeFileSync(KEYS_FILE, "[]", "utf8");
+}
+
+if (!fs.existsSync(BOT_CONFIG_FILE)) {
+  fs.writeFileSync(BOT_CONFIG_FILE, "{}", "utf8");
 }
 
 app.use(express.json({ limit: "15mb" }));
@@ -57,6 +62,18 @@ function readKeys() {
     return JSON.parse(fs.readFileSync(KEYS_FILE, "utf8"));
   } catch {
     return [];
+  }
+}
+
+function writeKeys(data) {
+  fs.writeFileSync(KEYS_FILE, JSON.stringify(data, null, 2));
+}
+
+function readBotConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(BOT_CONFIG_FILE, "utf8"));
+  } catch {
+    return {};
   }
 }
 
@@ -457,7 +474,6 @@ app.delete("/api/scripts/internal/:id", (req, res) => {
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  // ownerId wajib dikirim bot untuk validasi ownership
   const requestOwnerId = req.headers["x-owner-id"];
 
   if (!requestOwnerId) {
@@ -473,7 +489,6 @@ app.delete("/api/scripts/internal/:id", (req, res) => {
 
   const script = db[index];
 
-  // Cek ownership - hanya owner yang bisa delete
   if (script.ownerId !== requestOwnerId) {
     return res.status(403).json({ error: "You do not own this script" });
   }
@@ -535,24 +550,63 @@ app.get("/api/execute/:id", (req, res) => {
 /*
 
 KEY LOADER - endpoint utama yang dipakai user
-Format loader:
-  script_key="XXXXXX-XXXXXX-XXXXXX-XXXXXX";
-  loadstring(game:HttpGet("https://domain/api/loader/SCRIPT_ID.lua"))()
 
 */
 
 app.get("/api/loader/:id.lua", (req, res) => {
   const scriptId = req.params.id;
-  // Support both Luarmor-style (key from global var via query) and header
   const key = req.query.key || req.headers["x-script-key"];
+  const guildId = req.query.guildId || req.headers["x-guild-id"];
 
-  // If no key in request, return a Lua loader that reads script_key global and re-calls with it
+  // CEK FREEMODE DULU
+  const botConfig = readBotConfig();
+  const isFreeMode = guildId && botConfig[guildId]?.freeMode?.[scriptId] === true;
+
+  // Jika free mode ENABLED, langsung berikan script tanpa cek key
+  if (isFreeMode) {
+    const db = readDB();
+    const script = db.find(x => x.id === scriptId);
+
+    if (!script) {
+      return res
+        .status(404)
+        .type("text/plain")
+        .send("-- SpideyProtect: Script not found");
+    }
+
+    if (!script.enabled) {
+      return res
+        .status(403)
+        .type("text/plain")
+        .send("-- SpideyProtect: Script disabled");
+    }
+
+    const filepath = path.join(SCRIPTS_DIR, script.filename);
+
+    if (!fs.existsSync(filepath)) {
+      return res
+        .status(404)
+        .type("text/plain")
+        .send("-- SpideyProtect: Source missing");
+    }
+
+    const source = fs.readFileSync(filepath, "utf8");
+
+    return res
+      .status(200)
+      .type("text/plain")
+      .set("Cache-Control", "no-store")
+      .send(source);
+  }
+
+  // Jika tidak ada key, return loader yang meminta key
   if (!key) {
     const base = req.headers["x-forwarded-proto"]
       ? `${req.headers["x-forwarded-proto"]}://${req.get("host")}`
       : `${req.protocol}://${req.get("host")}`;
     const selfUrl = `${base}/api/loader/${scriptId}.lua`;
-    const luaLoader = `-- SpideyProtect Loader\nif not script_key or tostring(script_key) == "" then\n    local plr = game:GetService("Players").LocalPlayer\n    if plr then\n        plr:Kick("\\nNO KEY PROVIDED\\n")\n    end\n    return\nend\nlocal ok, hwid = pcall(function()\n    return game:GetService("RbxAnalyticsService"):GetClientId()\nend)\nif not ok then hwid = tostring(game:GetService("Players").LocalPlayer.UserId) end\nlocal url = "${selfUrl}?key=" .. tostring(script_key) .. "&hwid=" .. tostring(hwid)\nloadstring(game:HttpGet(url, true))()\n`;
+    const guildParam = guildId ? `&guildId=${guildId}` : "";
+    const luaLoader = `-- SpideyProtect Loader\nif not script_key or tostring(script_key) == "" then\n    local plr = game:GetService("Players").LocalPlayer\n    if plr then\n        plr:Kick("\\nNO KEY PROVIDED\\n")\n    end\n    return\nend\nlocal ok, hwid = pcall(function()\n    return game:GetService("RbxAnalyticsService"):GetClientId()\nend)\nif not ok then hwid = tostring(game:GetService("Players").LocalPlayer.UserId) end\nlocal url = "${selfUrl}?key=" .. tostring(script_key) .. "&hwid=" .. tostring(hwid) .. "${guildParam}"\nloadstring(game:HttpGet(url, true))()\n`;
     return res
       .status(200)
       .type("text/plain")
@@ -560,6 +614,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
       .send(luaLoader);
   }
 
+  // NORMAL MODE: cek key
   const keys = readKeys();
   const keyData = keys.find(k => k.key === key.toUpperCase().trim());
 
@@ -588,7 +643,6 @@ app.get("/api/loader/:id.lua", (req, res) => {
   const clientHwid = req.query.hwid ? String(req.query.hwid).trim() : null;
 
   if (keyData.hwid) {
-    // Key sudah punya HWID terdaftar — wajib cocok persis
     if (!clientHwid || clientHwid !== keyData.hwid) {
       return res
         .status(200)
@@ -597,12 +651,11 @@ app.get("/api/loader/:id.lua", (req, res) => {
         .send('local plr = game:GetService("Players").LocalPlayer\nif plr then\n    plr:Kick("\\nHWID Mismatch Go Reset Your HWID\\n")\nend');
     }
   } else if (clientHwid) {
-    // HWID belum pernah di-set — bind sekarang (pertama kali run loader)
     const allKeys = readKeys();
     const idx = allKeys.findIndex(k => k.key === keyData.key);
     if (idx !== -1) {
       allKeys[idx].hwid = clientHwid;
-      fs.writeFileSync(KEYS_FILE, JSON.stringify(allKeys, null, 2));
+      writeKeys(allKeys);
     }
     keyData.hwid = clientHwid;
   }
@@ -667,8 +720,10 @@ app.get("/files/loaders/:id.lua", (req, res) => {
   }
 
   const base = getBaseUrl(req);
-  // Luarmor-style: key sebagai variabel terpisah, URL bersih tanpa query string
-  const loaderCode = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua"))()`;
+  const guildId = req.query.guildId || "";
+  const guildParam = guildId ? `?guildId=${guildId}` : "";
+  
+  const loaderCode = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua${guildParam}"))()`;
 
   res.status(200).send(`<!DOCTYPE html>
 <html lang="en">
