@@ -552,7 +552,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
       ? `${req.headers["x-forwarded-proto"]}://${req.get("host")}`
       : `${req.protocol}://${req.get("host")}`;
     const selfUrl = `${base}/api/loader/${scriptId}.lua`;
-    const luaLoader = `-- SpideyProtect Loader\nif not script_key or tostring(script_key) == "" then\n    local plr = game:GetService("Players").LocalPlayer\n    if plr then\n        plr:Kick("\\n[SpideyProtect]\\nNO KEY PROVIDED\\n\\nMasukkan script_key sebelum menjalankan loader.")\n    end\n    return\nend\nlocal ok, hwid = pcall(function()\n    return game:GetService("RbxAnalyticsService"):GetClientId()\nend)\nif not ok then hwid = tostring(game:GetService("Players").LocalPlayer.UserId) end\nlocal url = "${selfUrl}?key=" .. tostring(script_key) .. "&hwid=" .. tostring(hwid)\nloadstring(game:HttpGet(url, true))()\n`;
+    const luaLoader = `-- SpideyProtect Loader\nif not script_key or tostring(script_key) == "" then\n    local plr = game:GetService("Players").LocalPlayer\n    if plr then\n        plr:Kick("\\nNO KEY PROVIDED\\n")\n    end\n    return\nend\nlocal ok, hwid = pcall(function()\n    return game:GetService("RbxAnalyticsService"):GetClientId()\nend)\nif not ok then hwid = tostring(game:GetService("Players").LocalPlayer.UserId) end\nlocal url = "${selfUrl}?key=" .. tostring(script_key) .. "&hwid=" .. tostring(hwid)\nloadstring(game:HttpGet(url, true))()\n`;
     return res
       .status(200)
       .type("text/plain")
@@ -594,7 +594,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
         .status(200)
         .type("text/plain")
         .set("Cache-Control", "no-store")
-        .send('local plr = game:GetService("Players").LocalPlayer\nif plr then\n    plr:Kick("\\n[SpideyProtect]\\nHWID Mismatch Go Reset Your HWID\\n\\nDevice ini tidak terdaftar untuk key kamu.\\nGunakan tombol Reset HWID di panel Discord.")\nend');
+        .send('local plr = game:GetService("Players").LocalPlayer\nif plr then\n    plr:Kick("\\nHWID Mismatch Go Reset Your HWID\\n")\nend');
     }
   } else if (clientHwid) {
     // HWID belum pernah di-set — bind sekarang (pertama kali run loader)
