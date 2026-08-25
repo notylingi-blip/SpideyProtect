@@ -212,7 +212,7 @@ async function sendPanelEmbed(channel, title, description, scriptId, scriptName,
       .setEmoji("👤")
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
-      .setCustomId("reset_hwid")
+      .setCustomId(`reset_hwid:${scriptId}`)
       .setLabel("Reset HWID")
       .setEmoji("⚙️")
       .setStyle(ButtonStyle.Secondary)
@@ -220,7 +220,7 @@ async function sendPanelEmbed(channel, title, description, scriptId, scriptName,
 
   const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("get_stats")
+      .setCustomId(`get_stats:${scriptId}`)
       .setLabel("Get Stats")
       .setEmoji("📊")
       .setStyle(ButtonStyle.Secondary)
@@ -337,19 +337,31 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      if (customId === "reset_hwid") {
+      if (customId.startsWith("reset_hwid:") || customId === "reset_hwid") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
+          const scriptId = customId.includes(":") ? customId.split(":")[1] : null;
           const keys = readKeys();
-          const userKeys = keys.filter(k => String(k.userId) === String(interaction.user.id));
 
+          // Cek dulu user punya key untuk script panel ini
+          const userKeys = keys.filter(k => String(k.userId) === String(interaction.user.id));
           if (userKeys.length === 0) {
             return interaction.editReply({ content: "❌ You don't have any active key!" }).catch(() => {});
           }
 
+          if (scriptId) {
+            const validKey = userKeys.find(k => k.scriptId === scriptId);
+            if (!validKey) {
+              return interaction.editReply({ content: "❌ You don't have a key for this script!" }).catch(() => {});
+            }
+          }
+
           let resetCount = 0;
           const updatedKeys = keys.map(k => {
-            if (String(k.userId) === String(interaction.user.id) && k.hwid) {
+            // Reset hanya key milik user untuk script panel ini
+            const isOwner = String(k.userId) === String(interaction.user.id);
+            const isScript = scriptId ? k.scriptId === scriptId : true;
+            if (isOwner && isScript && k.hwid) {
               resetCount++;
               return { ...k, hwid: null };
             }
@@ -357,20 +369,21 @@ client.on("interactionCreate", async interaction => {
           });
 
           if (resetCount === 0) {
-            return interaction.editReply({ content: "ℹ️ No HWID is registered for your keys." }).catch(() => {});
+            return interaction.editReply({ content: "ℹ️ No HWID is registered for your key." }).catch(() => {});
           }
 
           writeKeys(updatedKeys);
-          return interaction.editReply({ content: `✅ HWID has been reset for ${resetCount} key(s)!` }).catch(() => {});
+          return interaction.editReply({ content: `✅ HWID has been reset!` }).catch(() => {});
         } catch (err) {
           console.error("Reset HWID error:", err);
           return interaction.editReply({ content: "❌ Failed to reset HWID. Please try again." }).catch(() => {});
         }
       }
 
-      if (customId === "get_stats") {
+      if (customId.startsWith("get_stats:") || customId === "get_stats") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
+          const scriptId = customId.includes(":") ? customId.split(":")[1] : null;
           const keys = readKeys();
           const userKeys = keys.filter(k => String(k.userId) === String(interaction.user.id));
 
@@ -378,17 +391,36 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ You don't have any active key!" }).catch(() => {});
           }
 
-          const myScripts = await getScriptsByOwner(interaction.user.id);
-          const scriptMap = {};
-          myScripts.forEach(s => { scriptMap[s.id] = s.name; });
+          // Validasi: user harus punya key untuk script panel ini
+          if (scriptId) {
+            const validKey = userKeys.find(k => k.scriptId === scriptId);
+            if (!validKey) {
+              return interaction.editReply({ content: "❌ You don't have a key for this script!" }).catch(() => {});
+            }
+          }
 
-          let stats = "📊 **YOUR KEY STATUS**\n\n";
-          let totalKeys = userKeys.length;
+          // Cuma tampil key yang relevan dengan script panel ini
+          const relevantKeys = scriptId ? userKeys.filter(k => k.scriptId === scriptId) : userKeys;
+
+          // Ambil nama script dari owner script ini (bukan dari user yang klik)
+          // scriptId sudah diketahui, ambil nama dari API
+          let scriptName = "Unknown Script";
+          if (scriptId) {
+            try {
+              const res = await axios.get(`${CONFIG.apiBase}/api/scripts/internal`, {
+                headers: { "x-api-secret": CONFIG.apiSecret },
+                timeout: 5000
+              });
+              const found = (res.data || []).find(s => s.id === scriptId);
+              if (found) scriptName = found.name;
+            } catch {}
+          }
+
+          let stats = `📊 **YOUR KEY STATUS - ${scriptName}**\n\n`;
           let activeKeys = 0;
           let expiredKeys = 0;
 
-          userKeys.forEach(k => {
-            const scriptName = scriptMap[k.scriptId] || "❓ Script deleted";
+          relevantKeys.forEach(k => {
             const isExpired = k.expiry && new Date(k.expiry) < new Date();
             const status = isExpired ? "❌ Expired" : "✅ Active";
             const hwidStatus = k.hwid ? "🔒 Bound" : "🔓 Not bound";
@@ -397,14 +429,13 @@ client.on("interactionCreate", async interaction => {
             if (!isExpired) activeKeys++;
             else expiredKeys++;
 
-            stats += `**${scriptName}**\n`;
-            stats += `  • Status: ${status}\n`;
-            stats += `  • HWID: ${hwidStatus}\n`;
-            stats += `  • Expiry: ${expiryText}\n`;
-            stats += `  • Key: \`${k.key}\`\n\n`;
+            stats += `• Status: ${status}\n`;
+            stats += `• HWID: ${hwidStatus}\n`;
+            stats += `• Expiry: ${expiryText}\n`;
+            stats += `• Key: \`${k.key}\`\n\n`;
           });
 
-          stats += `\n📈 **Total**: ${totalKeys} keys | Active: ${activeKeys} | Expired: ${expiredKeys}`;
+          stats += `📈 **Total**: ${relevantKeys.length} key(s) | Active: ${activeKeys} | Expired: ${expiredKeys}`;
 
           if (stats.length > 2000) {
             stats = stats.slice(0, 1990) + "\n... (truncated)";
