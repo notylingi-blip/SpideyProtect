@@ -78,17 +78,72 @@ async function getScriptsByOwner(ownerId) {
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 
 const commands = [
-  new SlashCommandBuilder().setName("setuppanel").setDescription("Setup panel embed").addStringOption(o => o.setName("title").setDescription("Title").setRequired(true)).addStringOption(o => o.setName("description").setDescription("Description").setRequired(true)),
-  new SlashCommandBuilder().setName("whitelistrole").setDescription("Set admin role").addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  new SlashCommandBuilder().setName("setbuyerrole").setDescription("Set buyer role").addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  new SlashCommandBuilder().setName("genkey").setDescription("Generate key").addIntegerOption(o => o.setName("days").setDescription("Duration in days (0=lifetime)").setRequired(true)).addIntegerOption(o => o.setName("amount").setDescription("Number of keys").setRequired(false)),
-  new SlashCommandBuilder().setName("whitelist").setDescription("Whitelist user/role").addIntegerOption(o => o.setName("days").setDescription("Duration in days (0=lifetime)").setRequired(true)).addUserOption(o => o.setName("user").setDescription("User").setRequired(false)).addRoleOption(o => o.setName("role").setDescription("Role").setRequired(false)),
-  new SlashCommandBuilder().setName("blacklist").setDescription("Blacklist user").addUserOption(o => o.setName("user").setDescription("User").setRequired(true)).addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(false)),
-  new SlashCommandBuilder().setName("unblacklist").setDescription("Unblacklist user").addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-  new SlashCommandBuilder().setName("revoke").setDescription("Revoke key/user").addStringOption(o => o.setName("key").setDescription("Key").setRequired(false)).addUserOption(o => o.setName("user").setDescription("User").setRequired(false)),
-  new SlashCommandBuilder().setName("listkeys").setDescription("View all keys"),
-  new SlashCommandBuilder().setName("userinfo").setDescription("View user info").addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
-  new SlashCommandBuilder().setName("deletescript").setDescription("Delete your script from SpideyProtect")
+  new SlashCommandBuilder()
+    .setName("setuppanel")
+    .setDescription("Setup panel embed with script selection")
+    .addStringOption(o => o.setName("title").setDescription("Title").setRequired(true))
+    .addStringOption(o => o.setName("description").setDescription("Description").setRequired(true))
+    .addStringOption(o => o.setName("script").setDescription("Script ID to use (optional, will show selector if not provided)").setRequired(false)),
+  
+  new SlashCommandBuilder()
+    .setName("whitelistrole")
+    .setDescription("Set admin role")
+    .addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true))
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  
+  new SlashCommandBuilder()
+    .setName("setbuyerrole")
+    .setDescription("Set buyer role")
+    .addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true))
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  
+  new SlashCommandBuilder()
+    .setName("genkey")
+    .setDescription("Generate key")
+    .addIntegerOption(o => o.setName("days").setDescription("Duration in days (0=lifetime)").setRequired(true))
+    .addIntegerOption(o => o.setName("amount").setDescription("Number of keys").setRequired(false)),
+  
+  new SlashCommandBuilder()
+    .setName("whitelist")
+    .setDescription("Whitelist user/role")
+    .addIntegerOption(o => o.setName("days").setDescription("Duration in days (0=lifetime)").setRequired(true))
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(false))
+    .addRoleOption(o => o.setName("role").setDescription("Role").setRequired(false)),
+  
+  new SlashCommandBuilder()
+    .setName("blacklist")
+    .setDescription("Blacklist user")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true))
+    .addStringOption(o => o.setName("reason").setDescription("Reason").setRequired(false)),
+  
+  new SlashCommandBuilder()
+    .setName("unblacklist")
+    .setDescription("Unblacklist user")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+  
+  new SlashCommandBuilder()
+    .setName("revoke")
+    .setDescription("Revoke key/user")
+    .addStringOption(o => o.setName("key").setDescription("Key").setRequired(false))
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(false)),
+  
+  new SlashCommandBuilder()
+    .setName("listkeys")
+    .setDescription("View all keys"),
+  
+  new SlashCommandBuilder()
+    .setName("userinfo")
+    .setDescription("View user info")
+    .addUserOption(o => o.setName("user").setDescription("User").setRequired(true)),
+  
+  new SlashCommandBuilder()
+    .setName("deletescript")
+    .setDescription("Delete your script from SpideyProtect"),
+  
+  new SlashCommandBuilder()
+    .setName("setdefaultscript")
+    .setDescription("Set default script for panel")
+    .addStringOption(o => o.setName("script_id").setDescription("Script ID").setRequired(true))
 ].map(c => c.toJSON());
 
 client.once("ready", async () => {
@@ -100,21 +155,6 @@ client.once("ready", async () => {
     console.error("❌ Failed to register commands:", err); 
   }
 });
-
-// Helper function to safely reply
-async function safeReply(interaction, content, ephemeral = true) {
-  try {
-    if (interaction.deferred) {
-      await interaction.editReply(content);
-    } else if (interaction.replied) {
-      await interaction.followUp(content);
-    } else {
-      await interaction.reply({ ...content, ephemeral });
-    }
-  } catch (err) {
-    console.error("Failed to reply:", err);
-  }
-}
 
 client.on("interactionCreate", async interaction => {
   try {
@@ -298,7 +338,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // Unknown button
       return interaction.reply({ content: "❌ Unknown button.", ephemeral: true }).catch(() => {});
     }
 
@@ -365,6 +404,80 @@ client.on("interactionCreate", async interaction => {
         } catch (err) {
           console.error("Delete script error:", err);
           return interaction.editReply({ content: "❌ Failed to delete script." }).catch(() => {});
+        }
+      }
+
+      // --- SETUP PANEL SELECT ---
+      if (interaction.customId === "setuppanel_select") {
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
+
+        try {
+          const scriptId = interaction.values[0];
+          const [, title, description] = interaction.customId.split(":").slice(1);
+          
+          const myScripts = await getScriptsByOwner(interaction.user.id);
+          const selectedScript = myScripts.find(s => s.id === scriptId);
+          
+          if (!selectedScript) {
+            return interaction.editReply({ content: "❌ Script not found or not yours!" }).catch(() => {});
+          }
+
+          const embed = new EmbedBuilder()
+            .setTitle(title)
+            .setDescription(description)
+            .setColor(0x5865F2)
+            .setFooter({ text: `SpideyProtect • ${selectedScript.name}` })
+            .setTimestamp();
+
+          const row1 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId("redeem_key")
+              .setLabel("Redeem Key")
+              .setEmoji("🔑")
+              .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+              .setCustomId(`get_script:${interaction.user.id}`)
+              .setLabel("Get Script")
+              .setEmoji("📜")
+              .setStyle(ButtonStyle.Primary)
+          );
+
+          const row2 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId("get_role")
+              .setLabel("Get Role")
+              .setEmoji("👤")
+              .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+              .setCustomId("reset_hwid")
+              .setLabel("Reset HWID")
+              .setEmoji("⚙️")
+              .setStyle(ButtonStyle.Secondary)
+          );
+
+          const row3 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId("get_stats")
+              .setLabel("Get Stats")
+              .setEmoji("📊")
+              .setStyle(ButtonStyle.Secondary)
+          );
+
+          await interaction.channel.send({ 
+            embeds: [embed], 
+            components: [row1, row2, row3] 
+          });
+
+          const cfg = readConfig();
+          if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
+          cfg[interaction.guildId].panelChannelId = interaction.channel.id;
+          cfg[interaction.guildId].panelScriptId = scriptId;
+          writeConfig(cfg);
+
+          return interaction.editReply({ content: `✅ Panel created with script: **${selectedScript.name}**!` }).catch(() => {});
+        } catch (err) {
+          console.error("Setup panel select error:", err);
+          return interaction.editReply({ content: "❌ Failed to create panel. Please try again." }).catch(() => {});
         }
       }
 
@@ -532,11 +645,37 @@ client.on("interactionCreate", async interaction => {
         return interaction.reply({ content: `✅ Buyer role set to <@&${role.id}>!`, ephemeral: true }).catch(() => {});
       }
 
+      // --- SETDEFAULTSCRIPT ---
+      if (commandName === "setdefaultscript") {
+        if (!hasPermission(interaction.member, interaction.guildId)) {
+          return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
+        }
+
+        const scriptId = interaction.options.getString("script_id");
+        const myScripts = await getScriptsByOwner(interaction.user.id);
+        const selectedScript = myScripts.find(s => s.id === scriptId);
+
+        if (!selectedScript) {
+          return interaction.reply({ content: "❌ Script not found or not yours!", ephemeral: true }).catch(() => {});
+        }
+
+        const cfg = readConfig();
+        if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
+        cfg[interaction.guildId].panelScriptId = scriptId;
+        writeConfig(cfg);
+
+        return interaction.reply({ 
+          content: `✅ Default script set to: **${selectedScript.name}** (${scriptId})`, 
+          ephemeral: true 
+        }).catch(() => {});
+      }
+
       // --- SETUPPANEL ---
       if (commandName === "setuppanel") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
         }
+
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         
         try {
@@ -545,58 +684,148 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ You don't have any scripts yet." }).catch(() => {});
           }
 
-          const embed = new EmbedBuilder()
-            .setTitle(interaction.options.getString("title"))
-            .setDescription(interaction.options.getString("description"))
-            .setColor(0x5865F2)
-            .setFooter({ text: "SpideyProtect • Panel" })
-            .setTimestamp();
+          const title = interaction.options.getString("title");
+          const description = interaction.options.getString("description");
+          const providedScriptId = interaction.options.getString("script");
 
-          const row1 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId("redeem_key")
-              .setLabel("Redeem Key")
-              .setEmoji("🔑")
-              .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-              .setCustomId(`get_script:${interaction.user.id}`)
-              .setLabel("Get Script")
-              .setEmoji("📜")
-              .setStyle(ButtonStyle.Primary)
+          // Check if a specific script was provided
+          if (providedScriptId) {
+            const selectedScript = myScripts.find(s => s.id === providedScriptId);
+            if (!selectedScript) {
+              return interaction.editReply({ content: "❌ Script not found or not yours!" }).catch(() => {});
+            }
+
+            // Create panel with the specified script
+            const embed = new EmbedBuilder()
+              .setTitle(title)
+              .setDescription(description)
+              .setColor(0x5865F2)
+              .setFooter({ text: `SpideyProtect • ${selectedScript.name}` })
+              .setTimestamp();
+
+            const row1 = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId("redeem_key")
+                .setLabel("Redeem Key")
+                .setEmoji("🔑")
+                .setStyle(ButtonStyle.Success),
+              new ButtonBuilder()
+                .setCustomId(`get_script:${interaction.user.id}`)
+                .setLabel("Get Script")
+                .setEmoji("📜")
+                .setStyle(ButtonStyle.Primary)
+            );
+
+            const row2 = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId("get_role")
+                .setLabel("Get Role")
+                .setEmoji("👤")
+                .setStyle(ButtonStyle.Primary),
+              new ButtonBuilder()
+                .setCustomId("reset_hwid")
+                .setLabel("Reset HWID")
+                .setEmoji("⚙️")
+                .setStyle(ButtonStyle.Secondary)
+            );
+
+            const row3 = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId("get_stats")
+                .setLabel("Get Stats")
+                .setEmoji("📊")
+                .setStyle(ButtonStyle.Secondary)
+            );
+
+            await interaction.channel.send({ 
+              embeds: [embed], 
+              components: [row1, row2, row3] 
+            });
+
+            const cfg = readConfig();
+            if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
+            cfg[interaction.guildId].panelChannelId = interaction.channel.id;
+            cfg[interaction.guildId].panelScriptId = providedScriptId;
+            writeConfig(cfg);
+
+            return interaction.editReply({ content: `✅ Panel created with script: **${selectedScript.name}**!` }).catch(() => {});
+          }
+
+          // If no script provided, show selection menu
+          if (myScripts.length === 1) {
+            // Auto-select if only one script
+            const scriptId = myScripts[0].id;
+            const embed = new EmbedBuilder()
+              .setTitle(title)
+              .setDescription(description)
+              .setColor(0x5865F2)
+              .setFooter({ text: `SpideyProtect • ${myScripts[0].name}` })
+              .setTimestamp();
+
+            const row1 = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId("redeem_key")
+                .setLabel("Redeem Key")
+                .setEmoji("🔑")
+                .setStyle(ButtonStyle.Success),
+              new ButtonBuilder()
+                .setCustomId(`get_script:${interaction.user.id}`)
+                .setLabel("Get Script")
+                .setEmoji("📜")
+                .setStyle(ButtonStyle.Primary)
+            );
+
+            const row2 = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId("get_role")
+                .setLabel("Get Role")
+                .setEmoji("👤")
+                .setStyle(ButtonStyle.Primary),
+              new ButtonBuilder()
+                .setCustomId("reset_hwid")
+                .setLabel("Reset HWID")
+                .setEmoji("⚙️")
+                .setStyle(ButtonStyle.Secondary)
+            );
+
+            const row3 = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId("get_stats")
+                .setLabel("Get Stats")
+                .setEmoji("📊")
+                .setStyle(ButtonStyle.Secondary)
+            );
+
+            await interaction.channel.send({ 
+              embeds: [embed], 
+              components: [row1, row2, row3] 
+            });
+
+            const cfg = readConfig();
+            if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
+            cfg[interaction.guildId].panelChannelId = interaction.channel.id;
+            cfg[interaction.guildId].panelScriptId = scriptId;
+            writeConfig(cfg);
+
+            return interaction.editReply({ content: `✅ Panel created with script: **${myScripts[0].name}**!` }).catch(() => {});
+          }
+
+          // Multiple scripts - show selection menu
+          const options = myScripts.slice(0, 25).map(s => 
+            new StringSelectMenuOptionBuilder()
+              .setLabel(s.name.length > 50 ? s.name.slice(0, 47) + "..." : s.name)
+              .setValue(s.id)
           );
 
-          const row2 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId("get_role")
-              .setLabel("Get Role")
-              .setEmoji("👤")
-              .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-              .setCustomId("reset_hwid")
-              .setLabel("Reset HWID")
-              .setEmoji("⚙️")
-              .setStyle(ButtonStyle.Secondary)
-          );
+          const select = new StringSelectMenuBuilder()
+            .setCustomId(`setuppanel_select:${title}:${description}`)
+            .setPlaceholder("Select a script for this panel...")
+            .addOptions(options);
 
-          const row3 = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId("get_stats")
-              .setLabel("Get Stats")
-              .setEmoji("📊")
-              .setStyle(ButtonStyle.Secondary)
-          );
-
-          await interaction.channel.send({ 
-            embeds: [embed], 
-            components: [row1, row2, row3] 
-          });
-
-          const cfg = readConfig();
-          if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
-          cfg[interaction.guildId].panelChannelId = interaction.channel.id;
-          writeConfig(cfg);
-
-          return interaction.editReply({ content: "✅ Panel created!" }).catch(() => {});
+          return interaction.editReply({ 
+            content: "Select which script you want to use for this panel:", 
+            components: [new ActionRowBuilder().addComponents(select)] 
+          }).catch(() => {});
         } catch (err) {
           console.error("Setup panel error:", err);
           return interaction.editReply({ content: "❌ Failed to create panel. Please try again." }).catch(() => {});
