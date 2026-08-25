@@ -82,8 +82,7 @@ const commands = [
     .setName("setuppanel")
     .setDescription("Setup panel embed with script selection")
     .addStringOption(o => o.setName("title").setDescription("Title").setRequired(true))
-    .addStringOption(o => o.setName("description").setDescription("Description").setRequired(true))
-    .addStringOption(o => o.setName("script").setDescription("Script ID to use (optional, will show selector if not provided)").setRequired(false)),
+    .addStringOption(o => o.setName("description").setDescription("Description").setRequired(true)),
   
   new SlashCommandBuilder()
     .setName("whitelistrole")
@@ -105,7 +104,7 @@ const commands = [
   
   new SlashCommandBuilder()
     .setName("whitelist")
-    .setDescription("Whitelist user/role")
+    .setDescription("Whitelist user/role for a script")
     .addIntegerOption(o => o.setName("days").setDescription("Duration in days (0=lifetime)").setRequired(true))
     .addUserOption(o => o.setName("user").setDescription("User").setRequired(false))
     .addRoleOption(o => o.setName("role").setDescription("Role").setRequired(false)),
@@ -138,12 +137,7 @@ const commands = [
   
   new SlashCommandBuilder()
     .setName("deletescript")
-    .setDescription("Delete your script from SpideyProtect"),
-  
-  new SlashCommandBuilder()
-    .setName("setdefaultscript")
-    .setDescription("Set default script for panel")
-    .addStringOption(o => o.setName("script_id").setDescription("Script ID").setRequired(true))
+    .setDescription("Delete your script from SpideyProtect")
 ].map(c => c.toJSON());
 
 client.once("ready", async () => {
@@ -412,8 +406,8 @@ client.on("interactionCreate", async interaction => {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
 
         try {
-          const scriptId = interaction.values[0];
           const [, title, description] = interaction.customId.split(":").slice(1);
+          const scriptId = interaction.values[0];
           
           const myScripts = await getScriptsByOwner(interaction.user.id);
           const selectedScript = myScripts.find(s => s.id === scriptId);
@@ -526,7 +520,7 @@ client.on("interactionCreate", async interaction => {
 
             const channelTag = panelChannelId ? `<#${panelChannelId}>` : `<#${interaction.channelId}>`;
             return interaction.editReply({ 
-              content: `<@${targetId}> You have been whitelisted!\nYou can access the script via this message --> ${channelTag}` 
+              content: `<@${targetId}> You have been whitelisted for **${owned.name}**!\nYou can access the script via this message --> ${channelTag}` 
             }).catch(() => {});
           }
 
@@ -558,7 +552,7 @@ client.on("interactionCreate", async interaction => {
 
             const channelTag = panelChannelId ? `<#${panelChannelId}>` : `<#${interaction.channelId}>`;
             return interaction.editReply({ 
-              content: `<@&${targetId}> You have been whitelisted! (${addedCount} members)\nYou can access the script via this message --> ${channelTag}` 
+              content: `<@&${targetId}> You have been whitelisted for **${owned.name}**! (${addedCount} members)\nYou can access the script via this message --> ${channelTag}` 
             }).catch(() => {});
           }
         } catch (err) {
@@ -645,115 +639,27 @@ client.on("interactionCreate", async interaction => {
         return interaction.reply({ content: `✅ Buyer role set to <@&${role.id}>!`, ephemeral: true }).catch(() => {});
       }
 
-      // --- SETDEFAULTSCRIPT ---
-      if (commandName === "setdefaultscript") {
-        if (!hasPermission(interaction.member, interaction.guildId)) {
-          return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
-        }
-
-        const scriptId = interaction.options.getString("script_id");
-        const myScripts = await getScriptsByOwner(interaction.user.id);
-        const selectedScript = myScripts.find(s => s.id === scriptId);
-
-        if (!selectedScript) {
-          return interaction.reply({ content: "❌ Script not found or not yours!", ephemeral: true }).catch(() => {});
-        }
-
-        const cfg = readConfig();
-        if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
-        cfg[interaction.guildId].panelScriptId = scriptId;
-        writeConfig(cfg);
-
-        return interaction.reply({ 
-          content: `✅ Default script set to: **${selectedScript.name}** (${scriptId})`, 
-          ephemeral: true 
-        }).catch(() => {});
-      }
-
       // --- SETUPPANEL ---
       if (commandName === "setuppanel") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
         }
 
+        // DEFER EARLY to prevent timeout
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         
         try {
+          const title = interaction.options.getString("title");
+          const description = interaction.options.getString("description");
+          
           const myScripts = await getScriptsByOwner(interaction.user.id);
+          
           if (myScripts.length === 0) {
             return interaction.editReply({ content: "❌ You don't have any scripts yet." }).catch(() => {});
           }
 
-          const title = interaction.options.getString("title");
-          const description = interaction.options.getString("description");
-          const providedScriptId = interaction.options.getString("script");
-
-          // Check if a specific script was provided
-          if (providedScriptId) {
-            const selectedScript = myScripts.find(s => s.id === providedScriptId);
-            if (!selectedScript) {
-              return interaction.editReply({ content: "❌ Script not found or not yours!" }).catch(() => {});
-            }
-
-            // Create panel with the specified script
-            const embed = new EmbedBuilder()
-              .setTitle(title)
-              .setDescription(description)
-              .setColor(0x5865F2)
-              .setFooter({ text: `SpideyProtect • ${selectedScript.name}` })
-              .setTimestamp();
-
-            const row1 = new ActionRowBuilder().addComponents(
-              new ButtonBuilder()
-                .setCustomId("redeem_key")
-                .setLabel("Redeem Key")
-                .setEmoji("🔑")
-                .setStyle(ButtonStyle.Success),
-              new ButtonBuilder()
-                .setCustomId(`get_script:${interaction.user.id}`)
-                .setLabel("Get Script")
-                .setEmoji("📜")
-                .setStyle(ButtonStyle.Primary)
-            );
-
-            const row2 = new ActionRowBuilder().addComponents(
-              new ButtonBuilder()
-                .setCustomId("get_role")
-                .setLabel("Get Role")
-                .setEmoji("👤")
-                .setStyle(ButtonStyle.Primary),
-              new ButtonBuilder()
-                .setCustomId("reset_hwid")
-                .setLabel("Reset HWID")
-                .setEmoji("⚙️")
-                .setStyle(ButtonStyle.Secondary)
-            );
-
-            const row3 = new ActionRowBuilder().addComponents(
-              new ButtonBuilder()
-                .setCustomId("get_stats")
-                .setLabel("Get Stats")
-                .setEmoji("📊")
-                .setStyle(ButtonStyle.Secondary)
-            );
-
-            await interaction.channel.send({ 
-              embeds: [embed], 
-              components: [row1, row2, row3] 
-            });
-
-            const cfg = readConfig();
-            if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
-            cfg[interaction.guildId].panelChannelId = interaction.channel.id;
-            cfg[interaction.guildId].panelScriptId = providedScriptId;
-            writeConfig(cfg);
-
-            return interaction.editReply({ content: `✅ Panel created with script: **${selectedScript.name}**!` }).catch(() => {});
-          }
-
-          // If no script provided, show selection menu
+          // If only one script, auto-select
           if (myScripts.length === 1) {
-            // Auto-select if only one script
             const scriptId = myScripts[0].id;
             const embed = new EmbedBuilder()
               .setTitle(title)
@@ -890,6 +796,77 @@ client.on("interactionCreate", async interaction => {
           const targetType = targetUser ? "user" : "role";
           const targetId = targetUser ? targetUser.id : targetRole.id;
 
+          // If only one script, auto-select without dropdown
+          if (myScripts.length === 1) {
+            const scriptId = myScripts[0].id;
+            const keys = readKeys();
+            const expiry = days === 0 ? null : new Date(Date.now() + days * 86400000).toISOString();
+            const cfg = readConfig()[interaction.guildId] || {};
+            const buyerRoleId = cfg.buyerRole;
+            const panelChannelId = cfg.panelChannelId;
+
+            if (targetUser) {
+              const key = generateKey();
+              keys.push({ 
+                key, 
+                hwid: null, 
+                userId: String(targetUser.id), 
+                username: targetUser.username, 
+                scriptId, 
+                redeemedAt: new Date().toISOString(), 
+                expiry, 
+                createdAt: new Date().toISOString(), 
+                createdBy: interaction.user.id 
+              });
+              writeKeys(keys);
+
+              if (buyerRoleId) {
+                try {
+                  const member = await interaction.guild.members.fetch(targetUser.id);
+                  await member.roles.add(buyerRoleId);
+                } catch {}
+              }
+
+              const channelTag = panelChannelId ? `<#${panelChannelId}>` : `<#${interaction.channelId}>`;
+              return interaction.editReply({ 
+                content: `<@${targetUser.id}> You have been whitelisted for **${myScripts[0].name}**!\nYou can access the script via this message --> ${channelTag}` 
+              }).catch(() => {});
+            }
+
+            if (targetRole) {
+              const role = await interaction.guild.roles.fetch(targetRole.id);
+              await interaction.guild.members.fetch();
+              const members = role.members.filter(m => !m.user.bot);
+
+              let addedCount = 0;
+              for (const [, member] of members) {
+                const userKey = generateKey();
+                keys.push({ 
+                  key: userKey, 
+                  hwid: null, 
+                  userId: String(member.id), 
+                  username: member.user.username, 
+                  scriptId, 
+                  redeemedAt: new Date().toISOString(), 
+                  expiry, 
+                  createdAt: new Date().toISOString(), 
+                  createdBy: interaction.user.id 
+                });
+                addedCount++;
+                if (buyerRoleId) { 
+                  try { await member.roles.add(buyerRoleId); } catch {} 
+                }
+              }
+              writeKeys(keys);
+
+              const channelTag = panelChannelId ? `<#${panelChannelId}>` : `<#${interaction.channelId}>`;
+              return interaction.editReply({ 
+                content: `<@&${targetRole.id}> You have been whitelisted for **${myScripts[0].name}**! (${addedCount} members)\nYou can access the script via this message --> ${channelTag}` 
+              }).catch(() => {});
+            }
+          }
+
+          // Multiple scripts - show selection menu
           const options = myScripts.slice(0, 25).map(s => 
             new StringSelectMenuOptionBuilder()
               .setLabel(s.name.length > 50 ? s.name.slice(0, 47) + "..." : s.name)
