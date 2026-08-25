@@ -271,6 +271,19 @@ client.on("interactionCreate", async interaction => {
           const ownerId = parts[1];
           const scriptId = parts[2];
 
+          // CEK FREEMODE DULU
+          const cfg = readConfig()[interaction.guildId] || {};
+          const isFreeMode = cfg.freeMode && cfg.freeMode[scriptId] === true;
+
+          if (isFreeMode) {
+            // FREE MODE: semua user bisa akses tanpa key
+            const loaderCode = `loadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${scriptId}.lua"))()`;
+            return interaction.editReply({ 
+              content: `📜 **FREE MODE ENABLED**\nNo key required!\n\`\`\`lua\n${loaderCode}\n\`\`\`` 
+            }).catch(() => {});
+          }
+
+          // NORMAL MODE: cek key
           const keys = readKeys();
           const userKeys = keys.filter(k => String(k.userId) === String(interaction.user.id));
 
@@ -532,7 +545,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- FREEMODE SELECT ---
+      // --- FREEMODE SELECT (pilih script) ---
       if (interaction.customId === "freemode_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
@@ -565,7 +578,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- FREEMODE MODE SELECT ---
+      // --- FREEMODE MODE SELECT (pilih enable/disable) ---
       if (interaction.customId === "freemode_mode_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
@@ -578,7 +591,9 @@ client.on("interactionCreate", async interaction => {
 
           freeModeTempData.set(interaction.user.id, { mode });
 
-          const options = myScripts.slice(0, 25).map(s => 
+          const sortedScripts = myScripts.sort((a, b) => a.name.localeCompare(b.name));
+
+          const options = sortedScripts.slice(0, 25).map(s => 
             new StringSelectMenuOptionBuilder()
               .setLabel(s.name.length > 50 ? s.name.slice(0, 47) + "..." : s.name)
               .setValue(s.id)
@@ -814,38 +829,29 @@ client.on("interactionCreate", async interaction => {
         try {
           const role = interaction.options.getRole("role");
           
-          const allScripts = await getAllScripts();
+          const myScripts = await getScriptsByOwner(interaction.user.id);
           
-          if (allScripts.length === 0) {
-            return interaction.editReply({ content: "❌ No scripts found in the database." }).catch(() => {});
+          if (myScripts.length === 0) {
+            return interaction.editReply({ content: "❌ You don't have any scripts yet." }).catch(() => {});
           }
 
-          // Filter scripts that exist in this guild's config
-          const cfg = readConfig()[interaction.guildId] || {};
-          const guildScripts = allScripts.filter(s => {
-            return cfg.panelScriptId === s.id || Object.keys(cfg.buyerRoles || {}).includes(s.id);
-          });
-
-          const scriptsToShow = guildScripts.length > 0 ? guildScripts : allScripts;
-
-          if (scriptsToShow.length === 1) {
-            const scriptId = scriptsToShow[0].id;
-            const cfgUpdate = readConfig();
-            if (!cfgUpdate[interaction.guildId]) cfgUpdate[interaction.guildId] = {};
-            if (!cfgUpdate[interaction.guildId].buyerRoles) cfgUpdate[interaction.guildId].buyerRoles = {};
+          if (myScripts.length === 1) {
+            const scriptId = myScripts[0].id;
+            const cfg = readConfig();
+            if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
+            if (!cfg[interaction.guildId].buyerRoles) cfg[interaction.guildId].buyerRoles = {};
             
-            cfgUpdate[interaction.guildId].buyerRoles[scriptId] = role.id;
-            writeConfig(cfgUpdate);
+            cfg[interaction.guildId].buyerRoles[scriptId] = role.id;
+            writeConfig(cfg);
 
             return interaction.editReply({ 
-              content: `✅ Buyer role <@&${role.id}> has been set for script **${scriptsToShow[0].name}**!` 
+              content: `✅ Buyer role <@&${role.id}> has been set for script **${myScripts[0].name}**!` 
             }).catch(() => {});
           }
 
           buyerRoleTempData.set(interaction.user.id, { roleId: role.id });
 
-          // Sort scripts alphabetically
-          const sortedScripts = scriptsToShow.sort((a, b) => a.name.localeCompare(b.name));
+          const sortedScripts = myScripts.sort((a, b) => a.name.localeCompare(b.name));
 
           const options = sortedScripts.slice(0, 25).map(s => 
             new StringSelectMenuOptionBuilder()
@@ -895,7 +901,6 @@ client.on("interactionCreate", async interaction => {
 
           setTimeout(() => panelTempData.delete(interaction.user.id), 5 * 60 * 1000);
 
-          // Sort scripts alphabetically
           const sortedScripts = myScripts.sort((a, b) => a.name.localeCompare(b.name));
 
           const options = sortedScripts.slice(0, 25).map(s => 
@@ -931,7 +936,6 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ You don't have any scripts yet." }).catch(() => {});
           }
 
-          // Sort scripts alphabetically
           const sortedScripts = myScripts.sort((a, b) => a.name.localeCompare(b.name));
 
           const options = sortedScripts.slice(0, 25).map(s => 
@@ -1078,7 +1082,6 @@ client.on("interactionCreate", async interaction => {
 
           await interaction.editReply({ content: "_ _" }).catch(() => {});
           
-          // Sort scripts alphabetically
           const sortedScripts = myScripts.sort((a, b) => a.name.localeCompare(b.name));
 
           const options = sortedScripts.slice(0, 25).map(s => 
@@ -1211,7 +1214,6 @@ client.on("interactionCreate", async interaction => {
             }).catch(() => {});
           }
 
-          // Sort scripts alphabetically
           const sortedScripts = myScripts.sort((a, b) => a.name.localeCompare(b.name));
 
           const options = sortedScripts.slice(0, 25).map(s => 
@@ -1296,7 +1298,6 @@ client.on("interactionCreate", async interaction => {
           let used = 0;
           let unused = 0;
 
-          // Sort keys by script name
           const sortedKeys = myKeys.sort((a, b) => {
             const nameA = scriptMap[a.scriptId] || "";
             const nameB = scriptMap[b.scriptId] || "";
