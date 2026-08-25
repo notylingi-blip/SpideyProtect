@@ -215,7 +215,7 @@ async function sendPanelEmbed(channel, title, description, scriptId, scriptName,
       .setEmoji("🔑")
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
-      .setCustomId(`get_script:${ownerId}:${scriptId}`)
+      .setCustomId(`get_script:${ownerId}:${scriptId}:${guildId}`)
       .setLabel("Get Script")
       .setEmoji("📜")
       .setStyle(ButtonStyle.Primary)
@@ -270,14 +270,15 @@ client.on("interactionCreate", async interaction => {
           const parts = customId.split(":");
           const ownerId = parts[1];
           const scriptId = parts[2];
+          const guildId = parts[3] || interaction.guildId;
 
           // CEK FREEMODE DULU
-          const cfg = readConfig()[interaction.guildId] || {};
+          const cfg = readConfig()[guildId] || {};
           const isFreeMode = cfg.freeMode && cfg.freeMode[scriptId] === true;
 
           if (isFreeMode) {
             // FREE MODE: semua user bisa akses tanpa key
-            const loaderCode = `loadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${scriptId}.lua"))()`;
+            const loaderCode = `loadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${scriptId}.lua?guildId=${guildId}"))()`;
             return interaction.editReply({ 
               content: `📜 **FREE MODE ENABLED**\nNo key required!\n\`\`\`lua\n${loaderCode}\n\`\`\`` 
             }).catch(() => {});
@@ -297,7 +298,7 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ You don't have a key for this script!" }).catch(() => {});
           }
 
-          const loaderCode = `script_key="${validKey.key}";\nloadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${validKey.scriptId}.lua"))()`;
+          const loaderCode = `script_key="${validKey.key}";\nloadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${validKey.scriptId}.lua?guildId=${guildId}"))()`;
           return interaction.editReply({ content: `📜 Your loader:\n\`\`\`lua\n${loaderCode}\n\`\`\`` }).catch(() => {});
         } catch (err) {
           console.error("Get script error:", err);
@@ -545,7 +546,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- FREEMODE SELECT (pilih script) ---
+      // --- FREEMODE SELECT ---
       if (interaction.customId === "freemode_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
@@ -578,7 +579,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- FREEMODE MODE SELECT (pilih enable/disable) ---
+      // --- FREEMODE MODE SELECT ---
       if (interaction.customId === "freemode_mode_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
