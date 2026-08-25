@@ -760,7 +760,7 @@ client.on("interactionCreate", async interaction => {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
         }
-        await interaction.deferReply({ ephemeral: true }).catch(() => {});
+        await interaction.deferReply({ ephemeral: false }).catch(() => {});
         try {
           const targetUser = interaction.options.getUser("user");
           const targetRole = interaction.options.getRole("role");
@@ -835,6 +835,8 @@ client.on("interactionCreate", async interaction => {
             }
           }
 
+          // Kalau banyak script, dropdown ini ephemeral aja biar gak rame
+          await interaction.editReply({ content: "_ _" }).catch(() => {}); // hapus pesan publik kosong
           const options = myScripts.slice(0, 25).map(s => 
             new StringSelectMenuOptionBuilder()
               .setLabel(s.name.length > 50 ? s.name.slice(0, 47) + "..." : s.name)
@@ -846,9 +848,10 @@ client.on("interactionCreate", async interaction => {
             .setPlaceholder("Select a script...")
             .addOptions(options);
 
-          return interaction.editReply({ 
+          return interaction.followUp({ 
             content: `Select a script to whitelist:`, 
-            components: [new ActionRowBuilder().addComponents(select)] 
+            components: [new ActionRowBuilder().addComponents(select)],
+            ephemeral: true
           }).catch(() => {});
         } catch (err) {
           console.error("Whitelist command error:", err);
