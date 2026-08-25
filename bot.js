@@ -207,7 +207,7 @@ async function sendPanelEmbed(channel, title, description, scriptId, scriptName,
 
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("get_role")
+      .setCustomId(`get_role:${scriptId}`)
       .setLabel("Get Role")
       .setEmoji("👤")
       .setStyle(ButtonStyle.Primary),
@@ -298,9 +298,10 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      if (customId === "get_role") {
+      if (customId.startsWith("get_role:") || customId === "get_role") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
+          const scriptId = customId.includes(":") ? customId.split(":")[1] : null;
           const cfg = readConfig()[interaction.guildId] || {};
           const buyerRoleId = cfg.buyerRole;
 
@@ -312,7 +313,15 @@ client.on("interactionCreate", async interaction => {
           const userKeys = keys.filter(k => String(k.userId) === String(interaction.user.id));
 
           if (userKeys.length === 0) {
-            return interaction.editReply({ content: "❌ You haven't redeemed a key yet!" }).catch(() => {});
+            return interaction.editReply({ content: "❌ You don't have a key! Redeem or get whitelisted first." }).catch(() => {});
+          }
+
+          // Kalau ada scriptId (panel baru), validasi key harus untuk script ini
+          if (scriptId) {
+            const validKey = userKeys.find(k => k.scriptId === scriptId);
+            if (!validKey) {
+              return interaction.editReply({ content: "❌ You don't have a key for this script!" }).catch(() => {});
+            }
           }
 
           const member = await interaction.guild.members.fetch(interaction.user.id);
