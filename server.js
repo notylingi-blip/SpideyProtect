@@ -86,13 +86,15 @@ function readBotConfig() {
   }
 }
 
+// ==================== ID GENERATOR ====================
+// 14 karakter hex (7 bytes)
 function generateId() {
-  return crypto.randomBytes(4).toString("hex");
+  return crypto.randomBytes(7).toString("hex");
 }
 
 function generateKey() {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length: 20 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  return Array.from({ length: 30 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
 function escapeHtml(value) {
@@ -328,12 +330,39 @@ app.get("/api/scripts/internal", (req, res) => {
       name: script.name,
       enabled: script.enabled,
       ownerId: script.ownerId,
+      ownerUsername: script.ownerUsername,
+      guildId: script.guildId,
+    }))
+  );
+});
+
+// API internal untuk get scripts by guild
+app.get("/api/scripts/internal/guild/:guildId", (req, res) => {
+  const secret = req.headers["x-api-secret"];
+
+  if (secret !== API_SECRET) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const db = readDB();
+  const guildId = req.params.guildId;
+
+  const filtered = db.filter((script) => script.guildId === guildId);
+
+  res.json(
+    filtered.map((script) => ({
+      id: script.id,
+      name: script.name,
+      enabled: script.enabled,
+      ownerId: script.ownerId,
+      ownerUsername: script.ownerUsername,
+      guildId: script.guildId,
     }))
   );
 });
 
 app.post("/api/scripts", requireAuth, (req, res) => {
-  const { name, source } = req.body;
+  const { name, source, guildId } = req.body;
 
   if (!name || typeof name !== "string") {
     return res.status(400).json({ error: "Script name is required" });
@@ -360,6 +389,7 @@ app.post("/api/scripts", requireAuth, (req, res) => {
     enabled: true,
     ownerId: req.session.user.id,
     ownerUsername: req.session.user.username,
+    guildId: guildId || null,
     createdAt: new Date().toISOString(),
   };
 
