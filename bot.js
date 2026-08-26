@@ -54,8 +54,8 @@ function isBlacklisted(userId) {
 }
 
 function generateKey() {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  return [6, 6, 6, 6].map(len => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join("")).join("-");
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  return Array.from({ length: 20 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
 function hasPermission(member, guildId) {
@@ -115,6 +115,29 @@ function clearCache(ownerId) {
     scriptCache.clear();
   }
 }
+
+// ==================== UPDATE GUILDS LIST ====================
+
+async function updateGuildsList() {
+  try {
+    const guilds = client.guilds.cache.map(g => ({
+      id: g.id,
+      name: g.name,
+      icon: g.icon,
+      memberCount: g.memberCount
+    }));
+    
+    await axios.post(`${CONFIG.apiBase}/api/admin/guilds/update`, 
+      { guilds },
+      { headers: { "x-api-secret": CONFIG.apiSecret } }
+    );
+    console.log(`✅ Updated guilds list: ${guilds.length} guilds`);
+  } catch (err) {
+    console.error("❌ Failed to update guilds list:", err.message);
+  }
+}
+
+// ==================== CLIENT INIT ====================
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 
@@ -190,15 +213,34 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 ].map(c => c.toJSON());
 
+// ==================== READY EVENT ====================
+
 client.once("ready", async () => {
   const rest = new REST({ version: "10" }).setToken(CONFIG.token);
   try {
     await rest.put(Routes.applicationCommands(CONFIG.clientId), { body: commands });
     console.log(`✅ Bot ready: ${client.user.tag}`);
+    
+    await updateGuildsList();
+    setInterval(updateGuildsList, 60 * 1000);
   } catch (err) { 
     console.error("❌ Failed to register commands:", err); 
   }
 });
+
+// ==================== GUILD EVENTS ====================
+
+client.on("guildCreate", async (guild) => {
+  console.log(`✅ Joined guild: ${guild.name} (${guild.id})`);
+  await updateGuildsList();
+});
+
+client.on("guildDelete", async (guild) => {
+  console.log(`❌ Left guild: ${guild.name} (${guild.id})`);
+  await updateGuildsList();
+});
+
+// ==================== SEND PANEL EMBED ====================
 
 async function sendPanelEmbed(channel, title, description, scriptId, scriptName, ownerId, guildId) {
   const embed = new EmbedBuilder()
@@ -215,7 +257,7 @@ async function sendPanelEmbed(channel, title, description, scriptId, scriptName,
       .setEmoji("🔑")
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
-      .setCustomId(`get_script:${ownerId}:${scriptId}:${guildId}`)
+      .setCustomId(`get_script:${ownerId}:${scriptId}`)
       .setLabel("Get Script")
       .setEmoji("📜")
       .setStyle(ButtonStyle.Primary)
@@ -251,6 +293,8 @@ async function sendPanelEmbed(channel, title, description, scriptId, scriptName,
   writeConfig(cfg);
 }
 
+// ==================== INTERACTION CREATE ====================
+
 client.on("interactionCreate", async interaction => {
   try {
     if (interaction.isButton() && isBlacklisted(interaction.user.id)) {
@@ -270,21 +314,18 @@ client.on("interactionCreate", async interaction => {
           const parts = customId.split(":");
           const ownerId = parts[1];
           const scriptId = parts[2];
-          const guildId = parts[3] || interaction.guildId;
 
           // CEK FREEMODE DULU
-          const cfg = readConfig()[guildId] || {};
+          const cfg = readConfig()[interaction.guildId] || {};
           const isFreeMode = cfg.freeMode && cfg.freeMode[scriptId] === true;
 
           if (isFreeMode) {
-            // FREE MODE: semua user bisa akses tanpa key
-            const loaderCode = `loadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${scriptId}.lua?guildId=${guildId}"))()`;
+            const loaderCode = `loadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${scriptId}.lua"))()`;
             return interaction.editReply({ 
               content: `📜 **FREE MODE ENABLED**\nNo key required!\n\`\`\`lua\n${loaderCode}\n\`\`\`` 
             }).catch(() => {});
           }
 
-          // NORMAL MODE: cek key
           const keys = readKeys();
           const userKeys = keys.filter(k => String(k.userId) === String(interaction.user.id));
 
@@ -298,7 +339,7 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ You don't have a key for this script!" }).catch(() => {});
           }
 
-          const loaderCode = `script_key="${validKey.key}";\nloadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${validKey.scriptId}.lua?guildId=${guildId}"))()`;
+          const loaderCode = `script_key="${validKey.key}";\nloadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${validKey.scriptId}.lua"))()`;
           return interaction.editReply({ content: `📜 Your loader:\n\`\`\`lua\n${loaderCode}\n\`\`\`` }).catch(() => {});
         } catch (err) {
           console.error("Get script error:", err);
@@ -315,7 +356,7 @@ client.on("interactionCreate", async interaction => {
           const keyInput = new TextInputBuilder()
             .setCustomId("input_key")
             .setLabel("Key")
-            .setPlaceholder("XXXXXX-XXXXXX-XXXXXX-XXXXXX")
+            .setPlaceholder("Enter your key here...")
             .setStyle(TextInputStyle.Short)
             .setRequired(true);
 
@@ -480,7 +521,7 @@ client.on("interactionCreate", async interaction => {
     if (interaction.isModalSubmit() && interaction.customId === "modal_redeem") {
       await interaction.deferReply({ ephemeral: true }).catch(() => {});
       try {
-        const keyInput = interaction.fields.getTextInputValue("input_key").toUpperCase().trim();
+        const keyInput = interaction.fields.getTextInputValue("input_key").toLowerCase().trim();
         const keys = readKeys();
         const keyData = keys.find(k => k.key === keyInput);
 
@@ -1257,7 +1298,7 @@ client.on("interactionCreate", async interaction => {
 
           if (key) {
             const initialLength = keys.length;
-            const newKeys = keys.filter(k => k.key !== key.toUpperCase().trim());
+            const newKeys = keys.filter(k => k.key !== key.toLowerCase().trim());
             if (newKeys.length === initialLength) {
               return interaction.editReply({ content: "❌ Key not found." }).catch(() => {});
             }
