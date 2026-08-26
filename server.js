@@ -13,36 +13,46 @@ const SCRIPTS_DIR = path.join(DATA_DIR, "scripts");
 const DB_FILE = path.join(DATA_DIR, "scripts.json");
 const KEYS_FILE = path.join(DATA_DIR, "keys.json");
 const BOT_CONFIG_FILE = path.join(DATA_DIR, "botconfig.json");
+const GUILDS_FILE = path.join(DATA_DIR, "guilds.json");
+
+// Admin user ID
+const ADMIN_USER_ID = "1485940617342353594";
 
 fs.mkdirSync(SCRIPTS_DIR, { recursive: true });
 
 if (!fs.existsSync(DB_FILE)) {
   fs.writeFileSync(DB_FILE, "[]", "utf8");
 }
-
 if (!fs.existsSync(KEYS_FILE)) {
   fs.writeFileSync(KEYS_FILE, "[]", "utf8");
 }
-
 if (!fs.existsSync(BOT_CONFIG_FILE)) {
   fs.writeFileSync(BOT_CONFIG_FILE, "{}", "utf8");
+}
+if (!fs.existsSync(GUILDS_FILE)) {
+  fs.writeFileSync(GUILDS_FILE, "[]", "utf8");
 }
 
 app.use(express.json({ limit: "15mb" }));
 
-app.use(session({
-  secret: process.env.SESSION_SECRET || "spideyprotect-secret-key-ganti-ini",
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: false,
-    maxAge: 7 * 24 * 60 * 60 * 1000
-  }
-}));
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "spideyprotect-secret-key-ganti-ini",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: false,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    },
+  })
+);
 
-const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || "1541101786855899177";
-const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || "GANTI_DENGAN_CLIENT_SECRET_BARU";
-const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || "http://localhost:3000/auth/discord/callback";
+const DISCORD_CLIENT_ID =
+  process.env.DISCORD_CLIENT_ID || "1541101786855899177";
+const DISCORD_CLIENT_SECRET =
+  process.env.DISCORD_CLIENT_SECRET || "GANTI_DENGAN_CLIENT_SECRET_BARU";
+const DISCORD_REDIRECT_URI =
+  process.env.DISCORD_REDIRECT_URI || "http://localhost:3000/auth/discord/callback";
 const API_SECRET = process.env.API_SECRET || "spidey-internal-secret";
 
 function readDB() {
@@ -105,11 +115,14 @@ function requireAuth(req, res, next) {
   next();
 }
 
-/*
+function isAdmin(req, res, next) {
+  if (!req.session || !req.session.user || req.session.user.id !== ADMIN_USER_ID) {
+    return res.status(403).send("Forbidden");
+  }
+  next();
+}
 
-AUTH - LOGIN PAGE
-
-*/
+// ==================== AUTH ====================
 
 app.get("/login", (req, res) => {
   if (req.session && req.session.user) {
@@ -208,27 +221,15 @@ p { color: rgba(255,255,255,.55); font-size: 13px; margin-bottom: 30px; }
 </html>`);
 });
 
-/*
-
-AUTH - REDIRECT KE DISCORD
-
-*/
-
 app.get("/auth/discord", (req, res) => {
   const params = new URLSearchParams({
     client_id: DISCORD_CLIENT_ID,
     redirect_uri: DISCORD_REDIRECT_URI,
     response_type: "code",
-    scope: "identify"
+    scope: "identify",
   });
   res.redirect(`https://discord.com/api/oauth2/authorize?${params}`);
 });
-
-/*
-
-AUTH - CALLBACK DARI DISCORD
-
-*/
 
 app.get("/auth/discord/callback", async (req, res) => {
   const { code } = req.query;
@@ -238,7 +239,6 @@ app.get("/auth/discord/callback", async (req, res) => {
   }
 
   try {
-
     const tokenRes = await axios.post(
       "https://discord.com/api/oauth2/token",
       new URLSearchParams({
@@ -246,12 +246,12 @@ app.get("/auth/discord/callback", async (req, res) => {
         client_secret: DISCORD_CLIENT_SECRET,
         grant_type: "authorization_code",
         code,
-        redirect_uri: DISCORD_REDIRECT_URI
+        redirect_uri: DISCORD_REDIRECT_URI,
       }),
       {
         headers: {
-          "Content-Type": "application/x-www-form-urlencoded"
-        }
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
       }
     );
 
@@ -259,8 +259,8 @@ app.get("/auth/discord/callback", async (req, res) => {
 
     const userRes = await axios.get("https://discord.com/api/users/@me", {
       headers: {
-        Authorization: `Bearer ${access_token}`
-      }
+        Authorization: `Bearer ${access_token}`,
+      },
     });
 
     const discordUser = userRes.data;
@@ -270,22 +270,15 @@ app.get("/auth/discord/callback", async (req, res) => {
       username: discordUser.username,
       avatar: discordUser.avatar
         ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
-        : `https://cdn.discordapp.com/embed/avatars/0.png`
+        : `https://cdn.discordapp.com/embed/avatars/0.png`,
     };
 
     res.redirect("/");
-
   } catch (err) {
     console.error("Discord OAuth error:", err?.response?.data || err.message);
     res.redirect("/login?error=1");
   }
 });
-
-/*
-
-AUTH - LOGOUT
-
-*/
 
 app.get("/logout", (req, res) => {
   req.session.destroy(() => {
@@ -293,11 +286,7 @@ app.get("/logout", (req, res) => {
   });
 });
 
-/*
-
-API - LIST SCRIPTS (hanya punya user sendiri)
-
-*/
+// ==================== API ====================
 
 app.get("/api/scripts", requireAuth, (req, res) => {
   const db = readDB();
@@ -305,21 +294,15 @@ app.get("/api/scripts", requireAuth, (req, res) => {
 
   res.json(
     db
-      .filter(script => script.ownerId === userId)
-      .map(script => ({
+      .filter((script) => script.ownerId === userId)
+      .map((script) => ({
         id: script.id,
         name: script.name,
         enabled: script.enabled,
-        createdAt: script.createdAt
+        createdAt: script.createdAt,
       }))
   );
 });
-
-/*
-
-INTERNAL API - LIST ALL SCRIPTS (dipanggil bot.js)
-
-*/
 
 app.get("/api/scripts/internal", (req, res) => {
   const secret = req.headers["x-api-secret"];
@@ -332,24 +315,18 @@ app.get("/api/scripts/internal", (req, res) => {
   const ownerId = req.query.ownerId;
 
   const filtered = ownerId
-    ? db.filter(script => script.ownerId === ownerId)
+    ? db.filter((script) => script.ownerId === ownerId)
     : db;
 
   res.json(
-    filtered.map(script => ({
+    filtered.map((script) => ({
       id: script.id,
       name: script.name,
       enabled: script.enabled,
-      ownerId: script.ownerId
+      ownerId: script.ownerId,
     }))
   );
 });
-
-/*
-
-API - UPLOAD SCRIPT
-
-*/
 
 app.post("/api/scripts", requireAuth, (req, res) => {
   const { name, source } = req.body;
@@ -379,7 +356,7 @@ app.post("/api/scripts", requireAuth, (req, res) => {
     enabled: true,
     ownerId: req.session.user.id,
     ownerUsername: req.session.user.username,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
   };
 
   const db = readDB();
@@ -395,24 +372,18 @@ app.post("/api/scripts", requireAuth, (req, res) => {
       id: script.id,
       name: script.name,
       enabled: script.enabled,
-      createdAt: script.createdAt
+      createdAt: script.createdAt,
     },
     loader: loaderPage,
-    executeLoader
+    executeLoader,
   });
 });
-
-/*
-
-API - TOGGLE (hanya owner)
-
-*/
 
 app.post("/api/scripts/:id/toggle", requireAuth, (req, res) => {
   const db = readDB();
   const userId = req.session.user.id;
 
-  const script = db.find(x => x.id === req.params.id);
+  const script = db.find((x) => x.id === req.params.id);
 
   if (!script) {
     return res.status(404).json({ error: "Script not found" });
@@ -428,17 +399,11 @@ app.post("/api/scripts/:id/toggle", requireAuth, (req, res) => {
   res.json({ success: true, enabled: script.enabled });
 });
 
-/*
-
-API - DELETE (hanya owner)
-
-*/
-
 app.delete("/api/scripts/:id", requireAuth, (req, res) => {
   const db = readDB();
   const userId = req.session.user.id;
 
-  const index = db.findIndex(x => x.id === req.params.id);
+  const index = db.findIndex((x) => x.id === req.params.id);
 
   if (index === -1) {
     return res.status(404).json({ error: "Script not found" });
@@ -461,12 +426,6 @@ app.delete("/api/scripts/:id", requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
-/*
-
-INTERNAL API - DELETE SCRIPT (dipanggil bot.js)
-
-*/
-
 app.delete("/api/scripts/internal/:id", (req, res) => {
   const secret = req.headers["x-api-secret"];
 
@@ -481,7 +440,7 @@ app.delete("/api/scripts/internal/:id", (req, res) => {
   }
 
   const db = readDB();
-  const index = db.findIndex(x => x.id === req.params.id);
+  const index = db.findIndex((x) => x.id === req.params.id);
 
   if (index === -1) {
     return res.status(404).json({ error: "Script not found" });
@@ -505,15 +464,9 @@ app.delete("/api/scripts/internal/:id", (req, res) => {
   res.json({ success: true, name: script.name });
 });
 
-/*
-
-API - EXECUTE (dipanggil loader lama, tanpa key)
-
-*/
-
 app.get("/api/execute/:id", (req, res) => {
   const db = readDB();
-  const script = db.find(x => x.id === req.params.id);
+  const script = db.find((x) => x.id === req.params.id);
 
   if (!script) {
     return res
@@ -547,12 +500,6 @@ app.get("/api/execute/:id", (req, res) => {
     .send(source);
 });
 
-/*
-
-KEY LOADER - endpoint utama yang dipakai user
-
-*/
-
 app.get("/api/loader/:id.lua", (req, res) => {
   const scriptId = req.params.id;
   const key = req.query.key || req.headers["x-script-key"];
@@ -565,7 +512,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
   // Jika free mode ENABLED, langsung berikan script tanpa cek key
   if (isFreeMode) {
     const db = readDB();
-    const script = db.find(x => x.id === scriptId);
+    const script = db.find((x) => x.id === scriptId);
 
     if (!script) {
       return res
@@ -616,7 +563,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
 
   // NORMAL MODE: cek key
   const keys = readKeys();
-  const keyData = keys.find(k => k.key === key.toUpperCase().trim());
+  const keyData = keys.find((k) => k.key === key.toUpperCase().trim());
 
   if (!keyData) {
     return res
@@ -652,7 +599,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
     }
   } else if (clientHwid) {
     const allKeys = readKeys();
-    const idx = allKeys.findIndex(k => k.key === keyData.key);
+    const idx = allKeys.findIndex((k) => k.key === keyData.key);
     if (idx !== -1) {
       allKeys[idx].hwid = clientHwid;
       writeKeys(allKeys);
@@ -661,7 +608,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
   }
 
   const db = readDB();
-  const script = db.find(x => x.id === scriptId);
+  const script = db.find((x) => x.id === scriptId);
 
   if (!script) {
     return res
@@ -695,15 +642,9 @@ app.get("/api/loader/:id.lua", (req, res) => {
     .send(source);
 });
 
-/*
-
-LOADER PAGE (browser)
-
-*/
-
 app.get("/files/loaders/:id.lua", (req, res) => {
   const db = readDB();
-  const script = db.find(x => x.id === req.params.id);
+  const script = db.find((x) => x.id === req.params.id);
 
   if (!script) {
     return res.status(404).send(`<!DOCTYPE html>
@@ -722,7 +663,7 @@ app.get("/files/loaders/:id.lua", (req, res) => {
   const base = getBaseUrl(req);
   const guildId = req.query.guildId || "";
   const guildParam = guildId ? `?guildId=${guildId}` : "";
-  
+
   const loaderCode = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua${guildParam}"))()`;
 
   res.status(200).send(`<!DOCTYPE html>
@@ -834,25 +775,340 @@ async function copyLoader() {
 </html>`);
 });
 
-/*
+// ==================== ADMIN API & PAGES ====================
 
-MAIN DASHBOARD
+app.get("/api/admin/guilds", isAdmin, (req, res) => {
+  let guilds = [];
+  if (fs.existsSync(GUILDS_FILE)) {
+    try {
+      guilds = JSON.parse(fs.readFileSync(GUILDS_FILE, "utf8"));
+    } catch (e) {}
+  }
+  res.json(guilds);
+});
 
-*/
+app.get("/api/admin/scripts", isAdmin, (req, res) => {
+  const db = readDB();
+  const scriptsWithSource = db.map((script) => {
+    const filepath = path.join(SCRIPTS_DIR, script.filename);
+    let source = null;
+    if (fs.existsSync(filepath)) {
+      source = fs.readFileSync(filepath, "utf8");
+    }
+    return { ...script, source };
+  });
+  res.json(scriptsWithSource);
+});
+
+app.get("/admin/dashboard", isAdmin, (req, res) => {
+  const db = readDB();
+  const keys = readKeys();
+  const totalScripts = db.length;
+  const totalUsers = new Set(db.map((s) => s.ownerId)).size;
+  const totalKeys = keys.length;
+  const enabledScripts = db.filter((s) => s.enabled).length;
+
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Admin Dashboard</title>
+<style>
+* { box-sizing: border-box; margin:0; padding:0; }
+body {
+  min-height:100vh;
+  font-family: Arial, sans-serif;
+  background: #050505;
+  color: white;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.card {
+  max-width:600px;
+  width:100%;
+  padding:40px;
+  border-radius:20px;
+  border:1px solid rgba(90,150,255,.18);
+  background: linear-gradient(145deg, rgba(8,31,57,.92), rgba(4,15,28,.95));
+  box-shadow: 0 25px 70px rgba(0,0,0,.4);
+}
+h1 { margin-bottom:20px; text-align:center; }
+.stat { display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,.08); }
+.stat:last-child { border-bottom:none; }
+.label { color: rgba(255,255,255,.55); }
+.value { font-weight:bold; }
+.back { display:inline-block; margin-top:25px; padding:10px 20px; border-radius:8px;
+  background: #5865F2; color:white; text-decoration:none; font-weight:bold; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>📊 Admin Dashboard</h1>
+  <div class="stat"><span class="label">Total Scripts</span><span class="value">${totalScripts}</span></div>
+  <div class="stat"><span class="label">Total Users</span><span class="value">${totalUsers}</span></div>
+  <div class="stat"><span class="label">Total Keys</span><span class="value">${totalKeys}</span></div>
+  <div class="stat"><span class="label">Enabled Scripts</span><span class="value">${enabledScripts}</span></div>
+  <div style="text-align:center;"><a class="back" href="/">⬅ Back to Dashboard</a></div>
+</div>
+</body>
+</html>`);
+});
+
+app.get("/admin/source", isAdmin, (req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Source Scripts - Admin</title>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; }
+body {
+  min-height:100vh;
+  font-family: Arial, sans-serif;
+  background: #050505;
+  color: white;
+  padding:20px;
+}
+.container { max-width:1100px; margin:0 auto; }
+h1 { margin-bottom:20px; }
+table { width:100%; border-collapse:collapse; background: rgba(255,255,255,.04); border-radius:12px; overflow:hidden; }
+th, td { padding:12px 15px; text-align:left; border-bottom:1px solid rgba(255,255,255,.08); }
+th { background: rgba(255,255,255,.08); color:#aaa; font-size:13px; text-transform:uppercase; }
+td { font-size:14px; }
+.script-name { font-weight:bold; }
+.owner { color: #aaa; font-size:13px; }
+.status { font-size:12px; padding:4px 8px; border-radius:12px; }
+.status.enabled { background: #1a5a2a; color:#88ff88; }
+.status.disabled { background: #5a1a1a; color:#ff8888; }
+.actions button { padding:6px 12px; border:none; border-radius:6px; cursor:pointer; font-weight:bold; }
+.btn-view { background:#5865F2; color:white; }
+.btn-view:hover { background:#4752c4; }
+.modal {
+  display:none; position:fixed; top:0; left:0; width:100%; height:100%;
+  background: rgba(0,0,0,.8); align-items:center; justify-content:center; z-index:999;
+}
+.modal-content {
+  max-width:800px; width:90%; max-height:80vh; background:#111; border-radius:16px;
+  padding:25px; overflow-y:auto; border:1px solid rgba(255,255,255,.1);
+}
+.modal-content h2 { margin-bottom:10px; }
+.modal-content pre { background:#0a0a0a; padding:16px; border-radius:8px; overflow-x:auto; font-size:13px; white-space:pre-wrap; word-wrap:break-word; }
+.modal-content .close { margin-top:15px; padding:8px 16px; background:#5865F2; color:white; border:none; border-radius:6px; cursor:pointer; }
+.back { display:inline-block; margin:20px 0; padding:8px 16px; background:#5865F2; color:white; text-decoration:none; border-radius:6px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>📄 Source Scripts (Admin)</h1>
+  <a class="back" href="/">⬅ Back</a>
+  <div id="scriptsContainer">
+    <p>Loading...</p>
+  </div>
+</div>
+
+<div class="modal" id="sourceModal">
+  <div class="modal-content">
+    <h2 id="modalScriptName">Script Name</h2>
+    <p><small>Owner: <span id="modalOwner"></span></small></p>
+    <pre id="modalSource">-- source here</pre>
+    <button class="close" onclick="closeModal()">Close</button>
+    <button class="close" onclick="copySource()" style="margin-left:10px;">📋 Copy Source</button>
+  </div>
+</div>
+
+<script>
+let currentSource = '';
+
+async function loadScripts() {
+  const container = document.getElementById('scriptsContainer');
+  try {
+    const res = await fetch('/api/admin/scripts');
+    const data = await res.json();
+    if (!data.length) {
+      container.innerHTML = '<p>No scripts found.</p>';
+      return;
+    }
+    let html = \`
+      <table>
+        <thead><tr><th>Name</th><th>Owner</th><th>Status</th><th>Created</th><th>Action</th></tr></thead>
+        <tbody>
+    \`;
+    data.forEach(s => {
+      const statusClass = s.enabled ? 'enabled' : 'disabled';
+      const statusText = s.enabled ? 'Enabled' : 'Disabled';
+      html += \`
+        <tr>
+          <td class="script-name">\${escapeHtml(s.name)}</td>
+          <td class="owner">\${escapeHtml(s.ownerUsername || s.ownerId)}</td>
+          <td><span class="status \${statusClass}">\${statusText}</span></td>
+          <td>\${new Date(s.createdAt).toLocaleDateString()}</td>
+          <td class="actions">
+            <button class="btn-view" onclick="viewSource('\${s.id}')">👁 View</button>
+          </td>
+        </tr>
+      \`;
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<p>Error loading scripts.</p>';
+  }
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function viewSource(id) {
+  try {
+    const res = await fetch('/api/admin/scripts');
+    const data = await res.json();
+    const script = data.find(s => s.id === id);
+    if (!script) { alert('Script not found'); return; }
+    document.getElementById('modalScriptName').textContent = script.name;
+    document.getElementById('modalOwner').textContent = script.ownerUsername || script.ownerId;
+    const source = script.source || '-- Source not available';
+    document.getElementById('modalSource').textContent = source;
+    currentSource = source;
+    document.getElementById('sourceModal').style.display = 'flex';
+  } catch (e) {
+    alert('Error loading source');
+  }
+}
+
+function closeModal() {
+  document.getElementById('sourceModal').style.display = 'none';
+}
+
+function copySource() {
+  if (!currentSource) return;
+  navigator.clipboard.writeText(currentSource).then(() => {
+    alert('Source copied to clipboard!');
+  }).catch(() => {
+    alert('Failed to copy');
+  });
+}
+
+loadScripts();
+</script>
+</body>
+</html>`);
+});
+
+app.get("/admin/bot-servers", isAdmin, (req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Bot Servers - Admin</title>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; }
+body {
+  min-height:100vh;
+  font-family: Arial, sans-serif;
+  background: #050505;
+  color: white;
+  padding:20px;
+}
+.container { max-width:800px; margin:0 auto; }
+h1 { margin-bottom:20px; }
+.guild-list { list-style:none; padding:0; }
+.guild-item {
+  background: rgba(255,255,255,.05);
+  border-radius:12px;
+  padding:16px 20px;
+  margin-bottom:10px;
+  display:flex;
+  align-items:center;
+  gap:15px;
+  border:1px solid rgba(255,255,255,.06);
+}
+.guild-icon {
+  width:50px; height:50px; border-radius:50%;
+  background: #2c2f33;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:24px;
+  font-weight:bold;
+  color:#aaa;
+}
+.guild-info { flex:1; }
+.guild-name { font-weight:bold; font-size:18px; }
+.guild-id { color:#888; font-size:13px; }
+.back { display:inline-block; margin:20px 0; padding:8px 16px; background:#5865F2; color:white; text-decoration:none; border-radius:6px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🤖 Bot Servers</h1>
+  <a class="back" href="/">⬅ Back</a>
+  <div id="guildsContainer">
+    <p>Loading...</p>
+  </div>
+</div>
+<script>
+async function loadGuilds() {
+  const container = document.getElementById('guildsContainer');
+  try {
+    const res = await fetch('/api/admin/guilds');
+    const data = await res.json();
+    if (!data.length) {
+      container.innerHTML = '<p>Bot is not in any guild yet.</p>';
+      return;
+    }
+    let html = '<ul class="guild-list">';
+    data.forEach(g => {
+      const icon = g.icon ? \`https://cdn.discordapp.com/icons/\${g.id}/\${g.icon}.png\` : null;
+      const initial = (g.name || '?').charAt(0).toUpperCase();
+      html += \`
+        <li class="guild-item">
+          <div class="guild-icon" style="background-image:url('\${icon || ''}'); background-size:cover;">
+            \${icon ? '' : initial}
+          </div>
+          <div class="guild-info">
+            <div class="guild-name">\${escapeHtml(g.name || 'Unknown')}</div>
+            <div class="guild-id">ID: \${g.id}</div>
+          </div>
+        </li>
+      \`;
+    });
+    html += '</ul>';
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<p>Error loading guilds.</p>';
+  }
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+loadGuilds();
+</script>
+</body>
+</html>`);
+});
+
+// ==================== MAIN DASHBOARD ====================
 
 app.get("/", requireAuth, (req, res) => {
-
   const db = readDB();
   const userId = req.session.user.id;
   const user = req.session.user;
+  const isAdminUser = user.id === ADMIN_USER_ID;
 
   const cards = db
-    .filter(script => script.ownerId === userId)
-    .map(script => {
-
+    .filter((script) => script.ownerId === userId)
+    .map((script) => {
       const base = getBaseUrl(req);
       const loaderPage = `${base}/files/loaders/${script.id}.lua`;
-      const loaderCode = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua?key="..script_key))()`;
       const loaderCodeDisplay = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua"))()`;
 
       return `
@@ -878,7 +1134,8 @@ app.get("/", requireAuth, (req, res) => {
     </div>
 </div>
 </div>`;
-    }).join("");
+    })
+    .join("");
 
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -894,12 +1151,27 @@ body { min-height: 100vh; font-family: Arial, Helvetica, sans-serif; color: whit
 .header { padding: 20px 30px; display: flex; align-items: center; justify-content: space-between;
   border-bottom: 1px solid rgba(255,255,255,.1);
   background: linear-gradient(90deg, #950000, #e00000, #101010); }
-.brand { display: flex; align-items: center; gap: 12px; }
+.brand { display: flex; align-items: center; gap: 12px; position:relative; }
 .logo { width: 46px; height: 46px; display: flex; align-items: center; justify-content: center;
   border-radius: 13px; background: white; color: #c00000; font-size: 25px;
   box-shadow: 0 0 25px rgba(255,0,0,.3); }
 .brand h1 { font-size: 23px; font-weight: 800; }
 .brand span { display: block; margin-top: 3px; color: rgba(255,255,255,.65); font-size: 11px; }
+
+.admin-menu { position:relative; margin-right:6px; }
+.menu-toggle { width:38px; height:38px; border:none; border-radius:10px;
+  background: rgba(255,255,255,.08); color:white; font-size:22px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; }
+.menu-toggle:hover { background: rgba(255,255,255,.15); }
+.admin-dropdown { display:none; position:absolute; top:48px; left:0; min-width:180px;
+  background:#161616; border:1px solid rgba(255,255,255,.1); border-radius:12px;
+  padding:6px; box-shadow:0 15px 40px rgba(0,0,0,.6); z-index:200; }
+.admin-dropdown.show { display:block; }
+.admin-dropdown a { display:block; padding:10px 14px; border-radius:8px; color:#eee;
+  text-decoration:none; font-size:13px; transition:background .15s; }
+.admin-dropdown a:hover { background:#252525; }
+.admin-dropdown a i { margin-right:8px; }
+
 .user-info { display: flex; align-items: center; gap: 10px; }
 .user-avatar { width: 36px; height: 36px; border-radius: 50%; border: 2px solid rgba(255,255,255,.3); }
 .user-name { font-size: 13px; font-weight: 700; color: white; }
@@ -971,6 +1243,15 @@ textarea { grid-column: 1 / -1; min-height: 180px; resize: vertical; }
 <body>
 <header class="header">
   <div class="brand">
+    ${isAdminUser ? `
+    <div class="admin-menu">
+      <button class="menu-toggle" onclick="toggleAdminMenu()">⋮</button>
+      <div class="admin-dropdown" id="adminDropdown">
+        <a href="/admin/dashboard"><i>📊</i> Dashboard</a>
+        <a href="/admin/source"><i>📄</i> Source Script</a>
+        <a href="/admin/bot-servers"><i>🤖</i> Bot Server</a>
+      </div>
+    </div>` : ''}
     <div class="logo">🕷️</div>
     <div>
       <h1>SpideyProtect</h1>
@@ -1028,7 +1309,7 @@ fileInput.addEventListener("change", function() {
     return;
   }
   fileName.textContent = file.name;
-  scriptName.value = file.name.replace(/\.(lua|txt)$/i, "");
+  scriptName.value = file.name.replace(/\\.(lua|txt)$/i, "");
   const reader = new FileReader();
   reader.onload = function(event) { scriptSource.value = event.target.result; };
   reader.readAsText(file);
@@ -1043,6 +1324,17 @@ function toggleMenu(id) {
 document.addEventListener("click", function(event) {
   if (!event.target.closest(".script-menu")) {
     document.querySelectorAll(".menu").forEach(m => m.classList.remove("show"));
+  }
+});
+
+function toggleAdminMenu() {
+  document.getElementById("adminDropdown").classList.toggle("show");
+}
+
+document.addEventListener("click", function(event) {
+  const menu = document.getElementById("adminDropdown");
+  if (menu && !event.target.closest(".admin-menu")) {
+    menu.classList.remove("show");
   }
 });
 
@@ -1091,11 +1383,7 @@ function openLoader(url) {
 </html>`);
 });
 
-/*
-
-START
-
-*/
+// ==================== START ====================
 
 app.listen(PORT, () => {
   console.log(`SpideyProtect running on port ${PORT}`);
