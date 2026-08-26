@@ -15,7 +15,6 @@ const KEYS_FILE = path.join(DATA_DIR, "keys.json");
 const BOT_CONFIG_FILE = path.join(DATA_DIR, "botconfig.json");
 const GUILDS_FILE = path.join(DATA_DIR, "guilds.json");
 
-// Admin user ID
 const ADMIN_USER_ID = "1485940617342353594";
 
 fs.mkdirSync(SCRIPTS_DIR, { recursive: true });
@@ -88,7 +87,12 @@ function readBotConfig() {
 }
 
 function generateId() {
-  return crypto.randomBytes(16).toString("hex");
+  return crypto.randomBytes(4).toString("hex");
+}
+
+function generateKey() {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  return Array.from({ length: 20 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
 function escapeHtml(value) {
@@ -205,16 +209,16 @@ p { color: rgba(255,255,255,.55); font-size: 13px; margin-bottom: 30px; }
 <div class="card">
   <div class="logo">🕷️</div>
   <h1>SpideyProtect</h1>
-  <p>Login dengan Discord untuk melindungi script Lua kamu.</p>
+  <p>Login with Discord to protect your Lua scripts.</p>
   <a class="discord-btn" href="/auth/discord">
     <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
       <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.056a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
     </svg>
-    Login dengan Discord
+    Login with Discord
   </a>
   <a class="invite-link" href="https://discord.com/oauth2/authorize?client_id=1541101786855899177&permissions=2415937584&integration_type=0&scope=bot" target="_blank" rel="noopener">
     <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.056a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
-    Invite Bot ke Server Discord
+    Invite Bot to Discord Server
   </a>
 </div>
 </body>
@@ -503,48 +507,6 @@ app.get("/api/execute/:id", (req, res) => {
 app.get("/api/loader/:id.lua", (req, res) => {
   const scriptId = req.params.id;
   const key = req.query.key || req.headers["x-script-key"];
-  const guildId = req.query.guildId || req.headers["x-guild-id"];
-
-  // CEK FREEMODE DULU
-  const botConfig = readBotConfig();
-  const isFreeMode = guildId && botConfig[guildId]?.freeMode?.[scriptId] === true;
-
-  // Jika free mode ENABLED, langsung berikan script tanpa cek key
-  if (isFreeMode) {
-    const db = readDB();
-    const script = db.find((x) => x.id === scriptId);
-
-    if (!script) {
-      return res
-        .status(404)
-        .type("text/plain")
-        .send("-- SpideyProtect: Script not found");
-    }
-
-    if (!script.enabled) {
-      return res
-        .status(403)
-        .type("text/plain")
-        .send("-- SpideyProtect: Script disabled");
-    }
-
-    const filepath = path.join(SCRIPTS_DIR, script.filename);
-
-    if (!fs.existsSync(filepath)) {
-      return res
-        .status(404)
-        .type("text/plain")
-        .send("-- SpideyProtect: Source missing");
-    }
-
-    const source = fs.readFileSync(filepath, "utf8");
-
-    return res
-      .status(200)
-      .type("text/plain")
-      .set("Cache-Control", "no-store")
-      .send(source);
-  }
 
   // Jika tidak ada key, return loader yang meminta key
   if (!key) {
@@ -552,8 +514,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
       ? `${req.headers["x-forwarded-proto"]}://${req.get("host")}`
       : `${req.protocol}://${req.get("host")}`;
     const selfUrl = `${base}/api/loader/${scriptId}.lua`;
-    const guildParam = guildId ? `&guildId=${guildId}` : "";
-    const luaLoader = `-- SpideyProtect Loader\nif not script_key or tostring(script_key) == "" then\n    local plr = game:GetService("Players").LocalPlayer\n    if plr then\n        plr:Kick("\\nNO KEY PROVIDED\\n")\n    end\n    return\nend\nlocal ok, hwid = pcall(function()\n    return game:GetService("RbxAnalyticsService"):GetClientId()\nend)\nif not ok then hwid = tostring(game:GetService("Players").LocalPlayer.UserId) end\nlocal url = "${selfUrl}?key=" .. tostring(script_key) .. "&hwid=" .. tostring(hwid) .. "${guildParam}"\nloadstring(game:HttpGet(url, true))()\n`;
+    const luaLoader = `-- SpideyProtect Loader\nif not script_key or tostring(script_key) == "" then\n    local plr = game:GetService("Players").LocalPlayer\n    if plr then\n        plr:Kick("\\nNO KEY PROVIDED\\n")\n    end\n    return\nend\nlocal ok, hwid = pcall(function()\n    return game:GetService("RbxAnalyticsService"):GetClientId()\nend)\nif not ok then hwid = tostring(game:GetService("Players").LocalPlayer.UserId) end\nlocal url = "${selfUrl}?key=" .. tostring(script_key) .. "&hwid=" .. tostring(hwid)\nloadstring(game:HttpGet(url, true))()\n`;
     return res
       .status(200)
       .type("text/plain")
@@ -563,7 +524,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
 
   // NORMAL MODE: cek key
   const keys = readKeys();
-  const keyData = keys.find((k) => k.key === key.toUpperCase().trim());
+  const keyData = keys.find((k) => k.key === key.toLowerCase().trim());
 
   if (!keyData) {
     return res
@@ -595,7 +556,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
         .status(200)
         .type("text/plain")
         .set("Cache-Control", "no-store")
-        .send('local plr = game:GetService("Players").LocalPlayer\nif plr then\n    plr:Kick("\\nHWID Mismatch Go Reset Your HWID\\n")\nend');
+        .send('local plr = game:GetService("Players").LocalPlayer\nif plr then\n    plr:Kick("\\nHWID Mismatch\\n")\nend');
     }
   } else if (clientHwid) {
     const allKeys = readKeys();
@@ -661,10 +622,7 @@ app.get("/files/loaders/:id.lua", (req, res) => {
   }
 
   const base = getBaseUrl(req);
-  const guildId = req.query.guildId || "";
-  const guildParam = guildId ? `?guildId=${guildId}` : "";
-
-  const loaderCode = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua${guildParam}"))()`;
+  const loaderCode = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua"))()`;
 
   res.status(200).send(`<!DOCTYPE html>
 <html lang="en">
@@ -775,7 +733,7 @@ async function copyLoader() {
 </html>`);
 });
 
-// ==================== ADMIN API & PAGES ====================
+// ==================== ADMIN API ====================
 
 app.get("/api/admin/guilds", isAdmin, (req, res) => {
   let guilds = [];
@@ -785,6 +743,22 @@ app.get("/api/admin/guilds", isAdmin, (req, res) => {
     } catch (e) {}
   }
   res.json(guilds);
+});
+
+app.post("/api/admin/guilds/update", (req, res) => {
+  const secret = req.headers["x-api-secret"];
+  
+  if (secret !== API_SECRET) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  
+  const { guilds } = req.body;
+  if (!guilds || !Array.isArray(guilds)) {
+    return res.status(400).json({ error: "Invalid guilds data" });
+  }
+  
+  fs.writeFileSync(GUILDS_FILE, JSON.stringify(guilds, null, 2));
+  res.json({ success: true });
 });
 
 app.get("/api/admin/scripts", isAdmin, (req, res) => {
@@ -799,6 +773,8 @@ app.get("/api/admin/scripts", isAdmin, (req, res) => {
   });
   res.json(scriptsWithSource);
 });
+
+// ==================== ADMIN PAGES ====================
 
 app.get("/admin/dashboard", isAdmin, (req, res) => {
   const db = readDB();
@@ -872,90 +848,142 @@ body {
   color: white;
   padding:20px;
 }
-.container { max-width:1100px; margin:0 auto; }
-h1 { margin-bottom:20px; }
+.container { max-width:1200px; margin:0 auto; }
+h1 { margin-bottom:20px; display:flex; align-items:center; gap:15px; flex-wrap:wrap; }
+.header-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
 table { width:100%; border-collapse:collapse; background: rgba(255,255,255,.04); border-radius:12px; overflow:hidden; }
 th, td { padding:12px 15px; text-align:left; border-bottom:1px solid rgba(255,255,255,.08); }
 th { background: rgba(255,255,255,.08); color:#aaa; font-size:13px; text-transform:uppercase; }
 td { font-size:14px; }
-.script-name { font-weight:bold; }
-.owner { color: #aaa; font-size:13px; }
+.script-name { font-weight:bold; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.owner { color: #aaa; font-size:13px; max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .status { font-size:12px; padding:4px 8px; border-radius:12px; }
 .status.enabled { background: #1a5a2a; color:#88ff88; }
 .status.disabled { background: #5a1a1a; color:#ff8888; }
-.actions button { padding:6px 12px; border:none; border-radius:6px; cursor:pointer; font-weight:bold; }
+.actions { display:flex; gap:6px; flex-wrap:wrap; }
+.actions button { padding:6px 12px; border:none; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; transition:transform .15s; }
+.actions button:hover { transform:scale(1.05); }
 .btn-view { background:#5865F2; color:white; }
-.btn-view:hover { background:#4752c4; }
+.btn-copy { background:#2b7a3a; color:white; }
+.btn-download { background:#a9701a; color:white; }
 .modal {
   display:none; position:fixed; top:0; left:0; width:100%; height:100%;
-  background: rgba(0,0,0,.8); align-items:center; justify-content:center; z-index:999;
+  background: rgba(0,0,0,.85); align-items:center; justify-content:center; z-index:999;
 }
 .modal-content {
-  max-width:800px; width:90%; max-height:80vh; background:#111; border-radius:16px;
+  max-width:900px; width:92%; max-height:85vh; background:#111; border-radius:16px;
   padding:25px; overflow-y:auto; border:1px solid rgba(255,255,255,.1);
 }
-.modal-content h2 { margin-bottom:10px; }
-.modal-content pre { background:#0a0a0a; padding:16px; border-radius:8px; overflow-x:auto; font-size:13px; white-space:pre-wrap; word-wrap:break-word; }
-.modal-content .close { margin-top:15px; padding:8px 16px; background:#5865F2; color:white; border:none; border-radius:6px; cursor:pointer; }
+.modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; flex-wrap:wrap; gap:10px; }
+.modal-header h2 { margin:0; }
+.modal-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.modal-actions button { padding:8px 16px; border:none; border-radius:6px; cursor:pointer; font-weight:bold; transition:transform .15s; }
+.modal-actions button:hover { transform:scale(1.05); }
+.modal-actions .btn-close { background:#444; color:white; }
+.modal-actions .btn-copy-source { background:#2b7a3a; color:white; }
+.modal-actions .btn-download-source { background:#a9701a; color:white; }
+.modal-content pre {
+  background:#0a0a0a; padding:16px; border-radius:8px; overflow-x:auto;
+  font-size:13px; white-space:pre-wrap; word-wrap:break-word;
+  max-height:60vh; overflow-y:auto;
+}
 .back { display:inline-block; margin:20px 0; padding:8px 16px; background:#5865F2; color:white; text-decoration:none; border-radius:6px; }
+.search-box { padding:10px 16px; border-radius:8px; border:1px solid rgba(255,255,255,.12); background:#101010; color:white; width:250px; font-size:14px; }
+.search-box::placeholder { color:#666; }
+.table-wrap { overflow-x:auto; }
+@media(max-width:700px) {
+  .container { padding:10px; }
+  .search-box { width:100%; }
+  th, td { padding:8px 10px; font-size:12px; }
+  .modal-content { padding:15px; }
+}
 </style>
 </head>
 <body>
 <div class="container">
-  <h1>📄 Source Scripts (Admin)</h1>
+  <div class="header-actions">
+    <h1>📄 Source Scripts (Admin)</h1>
+    <input class="search-box" id="searchInput" placeholder="🔍 Search scripts..." oninput="filterScripts()">
+  </div>
   <a class="back" href="/">⬅ Back</a>
-  <div id="scriptsContainer">
-    <p>Loading...</p>
+  <div class="table-wrap">
+    <div id="scriptsContainer">
+      <p>Loading...</p>
+    </div>
   </div>
 </div>
 
 <div class="modal" id="sourceModal">
   <div class="modal-content">
-    <h2 id="modalScriptName">Script Name</h2>
-    <p><small>Owner: <span id="modalOwner"></span></small></p>
+    <div class="modal-header">
+      <h2 id="modalScriptName">Script Name</h2>
+      <div class="modal-actions">
+        <button class="btn-copy-source" onclick="copySource()">📋 Copy</button>
+        <button class="btn-download-source" onclick="downloadSource()">⬇ Download</button>
+        <button class="btn-close" onclick="closeModal()">✕ Close</button>
+      </div>
+    </div>
+    <p><small>Owner: <span id="modalOwner"></span> | ID: <span id="modalScriptId"></span></small></p>
     <pre id="modalSource">-- source here</pre>
-    <button class="close" onclick="closeModal()">Close</button>
-    <button class="close" onclick="copySource()" style="margin-left:10px;">📋 Copy Source</button>
   </div>
 </div>
 
 <script>
-let currentSource = '';
+let allScripts = [];
+let currentScript = null;
 
 async function loadScripts() {
   const container = document.getElementById('scriptsContainer');
   try {
     const res = await fetch('/api/admin/scripts');
     const data = await res.json();
-    if (!data.length) {
-      container.innerHTML = '<p>No scripts found.</p>';
-      return;
-    }
-    let html = \`
-      <table>
-        <thead><tr><th>Name</th><th>Owner</th><th>Status</th><th>Created</th><th>Action</th></tr></thead>
-        <tbody>
-    \`;
-    data.forEach(s => {
-      const statusClass = s.enabled ? 'enabled' : 'disabled';
-      const statusText = s.enabled ? 'Enabled' : 'Disabled';
-      html += \`
-        <tr>
-          <td class="script-name">\${escapeHtml(s.name)}</td>
-          <td class="owner">\${escapeHtml(s.ownerUsername || s.ownerId)}</td>
-          <td><span class="status \${statusClass}">\${statusText}</span></td>
-          <td>\${new Date(s.createdAt).toLocaleDateString()}</td>
-          <td class="actions">
-            <button class="btn-view" onclick="viewSource('\${s.id}')">👁 View</button>
-          </td>
-        </tr>
-      \`;
-    });
-    html += '</tbody></table>';
-    container.innerHTML = html;
+    allScripts = data;
+    renderScripts(data);
   } catch (e) {
     container.innerHTML = '<p>Error loading scripts.</p>';
   }
+}
+
+function renderScripts(data) {
+  const container = document.getElementById('scriptsContainer');
+  if (!data.length) {
+    container.innerHTML = '<p>No scripts found.</p>';
+    return;
+  }
+  let html = \`
+    <table>
+      <thead><tr><th>Name</th><th>Owner</th><th>Status</th><th>Created</th><th style="min-width:200px;">Actions</th></tr></thead>
+      <tbody>
+  \`;
+  data.forEach(s => {
+    const statusClass = s.enabled ? 'enabled' : 'disabled';
+    const statusText = s.enabled ? 'Enabled' : 'Disabled';
+    const created = s.createdAt ? new Date(s.createdAt).toLocaleDateString() : 'Unknown';
+    html += \`
+      <tr>
+        <td class="script-name" title="\${escapeHtml(s.name)}">\${escapeHtml(s.name)}</td>
+        <td class="owner" title="\${escapeHtml(s.ownerUsername || s.ownerId)}">\${escapeHtml(s.ownerUsername || s.ownerId)}</td>
+        <td><span class="status \${statusClass}">\${statusText}</span></td>
+        <td>\${created}</td>
+        <td class="actions">
+          <button class="btn-view" onclick="viewSource('\${s.id}')">👁 View</button>
+          <button class="btn-copy" onclick="copyScriptSource('\${s.id}')">📋 Copy</button>
+          <button class="btn-download" onclick="downloadScriptSource('\${s.id}')">⬇ Download</button>
+        </td>
+      </tr>
+    \`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function filterScripts() {
+  const query = document.getElementById('searchInput').value.toLowerCase();
+  const filtered = allScripts.filter(s => 
+    s.name.toLowerCase().includes(query) || 
+    (s.ownerUsername || s.ownerId).toLowerCase().includes(query)
+  );
+  renderScripts(filtered);
 }
 
 function escapeHtml(str) {
@@ -963,20 +991,56 @@ function escapeHtml(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+async function getScript(id) {
+  const res = await fetch('/api/admin/scripts');
+  const data = await res.json();
+  return data.find(s => s.id === id);
+}
+
 async function viewSource(id) {
   try {
-    const res = await fetch('/api/admin/scripts');
-    const data = await res.json();
-    const script = data.find(s => s.id === id);
+    const script = await getScript(id);
     if (!script) { alert('Script not found'); return; }
+    currentScript = script;
     document.getElementById('modalScriptName').textContent = script.name;
     document.getElementById('modalOwner').textContent = script.ownerUsername || script.ownerId;
+    document.getElementById('modalScriptId').textContent = script.id;
     const source = script.source || '-- Source not available';
     document.getElementById('modalSource').textContent = source;
-    currentSource = source;
     document.getElementById('sourceModal').style.display = 'flex';
   } catch (e) {
     alert('Error loading source');
+  }
+}
+
+async function copyScriptSource(id) {
+  try {
+    const script = await getScript(id);
+    if (!script) { alert('Script not found'); return; }
+    const source = script.source || '';
+    await navigator.clipboard.writeText(source);
+    alert('✅ Source copied to clipboard!');
+  } catch (e) {
+    alert('❌ Failed to copy');
+  }
+}
+
+async function downloadScriptSource(id) {
+  try {
+    const script = await getScript(id);
+    if (!script) { alert('Script not found'); return; }
+    const source = script.source || '';
+    const blob = new Blob([source], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = \`\${script.name.replace(/[^a-zA-Z0-9]/g, '_')}.lua\`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('❌ Failed to download');
   }
 }
 
@@ -984,14 +1048,34 @@ function closeModal() {
   document.getElementById('sourceModal').style.display = 'none';
 }
 
-function copySource() {
-  if (!currentSource) return;
-  navigator.clipboard.writeText(currentSource).then(() => {
-    alert('Source copied to clipboard!');
-  }).catch(() => {
-    alert('Failed to copy');
-  });
+async function copySource() {
+  if (!currentScript) return;
+  const source = currentScript.source || '';
+  try {
+    await navigator.clipboard.writeText(source);
+    alert('✅ Source copied to clipboard!');
+  } catch (e) {
+    alert('❌ Failed to copy');
+  }
 }
+
+async function downloadSource() {
+  if (!currentScript) return;
+  const source = currentScript.source || '';
+  const blob = new Blob([source], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = \`\${currentScript.name.replace(/[^a-zA-Z0-9]/g, '_')}.lua\`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('sourceModal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
 
 loadScripts();
 </script>
@@ -1037,11 +1121,15 @@ h1 { margin-bottom:20px; }
   font-size:24px;
   font-weight:bold;
   color:#aaa;
+  flex-shrink:0;
 }
+.guild-icon img { width:100%; height:100%; border-radius:50%; object-fit:cover; }
 .guild-info { flex:1; }
 .guild-name { font-weight:bold; font-size:18px; }
 .guild-id { color:#888; font-size:13px; }
+.guild-members { color:#666; font-size:13px; }
 .back { display:inline-block; margin:20px 0; padding:8px 16px; background:#5865F2; color:white; text-decoration:none; border-radius:6px; }
+.no-guilds { padding:40px; text-align:center; color:#666; border:1px dashed rgba(255,255,255,.12); border-radius:12px; }
 </style>
 </head>
 <body>
@@ -1059,21 +1147,21 @@ async function loadGuilds() {
     const res = await fetch('/api/admin/guilds');
     const data = await res.json();
     if (!data.length) {
-      container.innerHTML = '<p>Bot is not in any guild yet.</p>';
+      container.innerHTML = '<div class="no-guilds">🤖 Bot is not in any guild yet.</div>';
       return;
     }
     let html = '<ul class="guild-list">';
     data.forEach(g => {
-      const icon = g.icon ? \`https://cdn.discordapp.com/icons/\${g.id}/\${g.icon}.png\` : null;
-      const initial = (g.name || '?').charAt(0).toUpperCase();
+      const iconHtml = g.icon 
+        ? \`<img src="https://cdn.discordapp.com/icons/\${g.id}/\${g.icon}.png" alt="\${escapeHtml(g.name)}">\` 
+        : escapeHtml((g.name || '?').charAt(0).toUpperCase());
       html += \`
         <li class="guild-item">
-          <div class="guild-icon" style="background-image:url('\${icon || ''}'); background-size:cover;">
-            \${icon ? '' : initial}
-          </div>
+          <div class="guild-icon">\${iconHtml}</div>
           <div class="guild-info">
             <div class="guild-name">\${escapeHtml(g.name || 'Unknown')}</div>
             <div class="guild-id">ID: \${g.id}</div>
+            <div class="guild-members">👥 \${g.memberCount || '?'} members</div>
           </div>
         </li>
       \`;
