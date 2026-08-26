@@ -58,21 +58,14 @@ function generateKey() {
   return Array.from({ length: 20 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
-// ==================== PERMISSION CHECK ====================
 function hasPermission(member, guildId) {
-  // Cek apakah user punya Administrator
   if (member.permissions.has(PermissionFlagsBits.Administrator)) return true;
-  
-  // Cek whitelist role di guild tersebut
   const cfg = readConfig();
   const roleId = cfg[guildId]?.whitelistRole;
-  if (roleId && member.roles.cache.has(roleId)) {
-    return true;
-  }
-  return false;
+  if (!roleId) return false;
+  return member.roles.cache.has(roleId);
 }
 
-// ==================== CACHE ====================
 const scriptCache = new Map();
 const CACHE_TTL = 30000;
 
@@ -80,7 +73,6 @@ const panelTempData = new Map();
 const buyerRoleTempData = new Map();
 const freeModeTempData = new Map();
 
-// ==================== GET SCRIPTS ====================
 async function getScriptsByOwner(ownerId) {
   const cacheKey = `scripts_${ownerId}`;
   const cached = scriptCache.get(cacheKey);
@@ -116,27 +108,6 @@ async function getAllScripts() {
   }
 }
 
-// Fungsi untuk mendapatkan script yang ada di guild tertentu
-// (Server tidak punya data guild, jadi kita ambil semua dan filter berdasarkan owner yang ada di guild)
-async function getScriptsInGuild(guildId) {
-  try {
-    const allScripts = await getAllScripts();
-    // Kita perlu filter berdasarkan owner yang ada di guild tersebut
-    // Karena server tidak menyimpan data guild, kita ambil dari guild members
-    const guild = client.guilds.cache.get(guildId);
-    if (!guild) return [];
-    
-    const members = await guild.members.fetch();
-    const memberIds = new Set(members.map(m => m.id));
-    
-    // Filter script yang owner-nya ada di guild tersebut
-    return allScripts.filter(s => memberIds.has(s.ownerId));
-  } catch (err) {
-    console.error("Error getting scripts in guild:", err);
-    return [];
-  }
-}
-
 function clearCache(ownerId) {
   if (ownerId) {
     scriptCache.delete(`scripts_${ownerId}`);
@@ -146,6 +117,7 @@ function clearCache(ownerId) {
 }
 
 // ==================== UPDATE GUILDS LIST ====================
+
 async function updateGuildsList() {
   try {
     const guilds = client.guilds.cache.map(g => ({
@@ -166,6 +138,7 @@ async function updateGuildsList() {
 }
 
 // ==================== CLIENT INIT ====================
+
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 
 const commands = [
@@ -178,12 +151,14 @@ const commands = [
   new SlashCommandBuilder()
     .setName("whitelistrole")
     .setDescription("Set admin role")
-    .addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true)),
+    .addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true))
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   
   new SlashCommandBuilder()
     .setName("setbuyerrole")
     .setDescription("Set buyer role for specific script")
-    .addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true)),
+    .addRoleOption(o => o.setName("role").setDescription("Role").setRequired(true))
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   
   new SlashCommandBuilder()
     .setName("genkey")
@@ -235,9 +210,11 @@ const commands = [
   new SlashCommandBuilder()
     .setName("clearcache")
     .setDescription("Clear script cache (admin only)")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 ].map(c => c.toJSON());
 
 // ==================== READY EVENT ====================
+
 client.once("ready", async () => {
   const rest = new REST({ version: "10" }).setToken(CONFIG.token);
   try {
@@ -252,6 +229,7 @@ client.once("ready", async () => {
 });
 
 // ==================== GUILD EVENTS ====================
+
 client.on("guildCreate", async (guild) => {
   console.log(`✅ Joined guild: ${guild.name} (${guild.id})`);
   await updateGuildsList();
@@ -263,6 +241,7 @@ client.on("guildDelete", async (guild) => {
 });
 
 // ==================== SEND PANEL EMBED ====================
+
 async function sendPanelEmbed(channel, title, description, scriptId, scriptName, ownerId, guildId) {
   const embed = new EmbedBuilder()
     .setTitle(title)
@@ -315,6 +294,7 @@ async function sendPanelEmbed(channel, title, description, scriptId, scriptName,
 }
 
 // ==================== INTERACTION CREATE ====================
+
 client.on("interactionCreate", async interaction => {
   try {
     if (interaction.isButton() && isBlacklisted(interaction.user.id)) {
@@ -335,6 +315,7 @@ client.on("interactionCreate", async interaction => {
           const ownerId = parts[1];
           const scriptId = parts[2];
 
+          // CEK FREEMODE DULU
           const cfg = readConfig()[interaction.guildId] || {};
           const isFreeMode = cfg.freeMode && cfg.freeMode[scriptId] === true;
 
@@ -620,13 +601,6 @@ client.on("interactionCreate", async interaction => {
           const { mode } = tempData;
           freeModeTempData.delete(interaction.user.id);
 
-          // Cek apakah script ada di guild ini
-          const guildScripts = await getScriptsInGuild(interaction.guildId);
-          const scriptExists = guildScripts.some(s => s.id === scriptId);
-          if (!scriptExists) {
-            return interaction.editReply({ content: "❌ Script not found in this guild!" }).catch(() => {});
-          }
-
           const cfg = readConfig();
           if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
           if (!cfg[interaction.guildId].freeMode) cfg[interaction.guildId].freeMode = {};
@@ -651,17 +625,15 @@ client.on("interactionCreate", async interaction => {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
           const mode = interaction.values[0];
+          const myScripts = await getScriptsByOwner(interaction.user.id);
           
-          // Ambil script yang ada di guild ini
-          const guildScripts = await getScriptsInGuild(interaction.guildId);
-          
-          if (guildScripts.length === 0) {
-            return interaction.editReply({ content: "❌ No scripts found in this guild." }).catch(() => {});
+          if (myScripts.length === 0) {
+            return interaction.editReply({ content: "❌ You don't have any scripts yet." }).catch(() => {});
           }
 
           freeModeTempData.set(interaction.user.id, { mode });
 
-          const sortedScripts = guildScripts.sort((a, b) => a.name.localeCompare(b.name));
+          const sortedScripts = myScripts.sort((a, b) => a.name.localeCompare(b.name));
 
           const options = sortedScripts.slice(0, 25).map(s => 
             new StringSelectMenuOptionBuilder()
@@ -697,14 +669,14 @@ client.on("interactionCreate", async interaction => {
           const { title, description } = tempData;
           panelTempData.delete(interaction.user.id);
 
-          const guildScripts = await getScriptsInGuild(interaction.guildId);
-          const selectedScript = guildScripts.find(s => s.id === scriptId);
+          const myScripts = await getScriptsByOwner(interaction.user.id);
+          const selectedScript = myScripts.find(s => s.id === scriptId);
           
           if (!selectedScript) {
-            return interaction.editReply({ content: "❌ Script not found in this guild!" }).catch(() => {});
+            return interaction.editReply({ content: "❌ Script not found or not yours!" }).catch(() => {});
           }
 
-          await sendPanelEmbed(interaction.channel, title, description, scriptId, selectedScript.name, selectedScript.ownerId, interaction.guildId);
+          await sendPanelEmbed(interaction.channel, title, description, scriptId, selectedScript.name, interaction.user.id, interaction.guildId);
           return interaction.editReply({ content: `✅ Panel created with script: **${selectedScript.name}**!` }).catch(() => {});
         } catch (err) {
           console.error("Setup panel select error:", err);
@@ -725,13 +697,6 @@ client.on("interactionCreate", async interaction => {
 
           const { roleId } = tempData;
           buyerRoleTempData.delete(interaction.user.id);
-
-          // Cek apakah script ada di guild ini
-          const guildScripts = await getScriptsInGuild(interaction.guildId);
-          const scriptExists = guildScripts.some(s => s.id === scriptId);
-          if (!scriptExists) {
-            return interaction.editReply({ content: "❌ Script not found in this guild!" }).catch(() => {});
-          }
 
           const cfg = readConfig();
           if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
@@ -759,11 +724,11 @@ client.on("interactionCreate", async interaction => {
           const days = parseInt(daysStr);
           const scriptId = interaction.values[0];
 
-          const guildScripts = await getScriptsInGuild(interaction.guildId);
-          const owned = guildScripts.find(s => s.id === scriptId);
+          const myScripts = await getScriptsByOwner(adminId);
+          const owned = myScripts.find(s => s.id === scriptId);
           
           if (!owned) {
-            return interaction.editReply({ content: "❌ Script not found in this guild." }).catch(() => {});
+            return interaction.editReply({ content: "❌ This script is not yours." }).catch(() => {});
           }
 
           const keys = readKeys();
@@ -839,10 +804,10 @@ client.on("interactionCreate", async interaction => {
           const adminId = parts[3];
           const scriptId = interaction.values[0];
 
-          const guildScripts = await getScriptsInGuild(interaction.guildId);
-          const owned = guildScripts.find(s => s.id === scriptId);
+          const myScripts = await getScriptsByOwner(adminId);
+          const owned = myScripts.find(s => s.id === scriptId);
           if (!owned) {
-            return interaction.editReply({ content: "❌ Script not found in this guild!" }).catch(() => {});
+            return interaction.editReply({ content: "❌ This script is not yours." }).catch(() => {});
           }
 
           const keys = readKeys();
@@ -875,32 +840,30 @@ client.on("interactionCreate", async interaction => {
     if (interaction.isChatInputCommand()) {
       const commandName = interaction.commandName;
 
-      // --- CLEARCACHE ---
       if (commandName === "clearcache") {
-        if (!hasPermission(interaction.member, interaction.guildId)) {
-          return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
+        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ content: "❌ Admin only.", ephemeral: true }).catch(() => {});
         }
         clearCache();
         return interaction.reply({ content: "✅ Cache cleared successfully!", ephemeral: true }).catch(() => {});
       }
 
-      // --- WHITELISTROLE ---
       if (commandName === "whitelistrole") {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-          return interaction.reply({ content: "❌ Administrator only.", ephemeral: true }).catch(() => {});
+          return interaction.reply({ content: "❌ Admin only.", ephemeral: true }).catch(() => {});
         }
         const role = interaction.options.getRole("role");
         const cfg = readConfig();
         if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
         cfg[interaction.guildId].whitelistRole = role.id;
         writeConfig(cfg);
-        return interaction.reply({ content: `✅ Role <@&${role.id}> is now the bot admin role in this server.`, ephemeral: true }).catch(() => {});
+        return interaction.reply({ content: `✅ Role <@&${role.id}> is now the bot admin role.`, ephemeral: true }).catch(() => {});
       }
 
       // --- SETBUYERROLE ---
       if (commandName === "setbuyerrole") {
-        if (!hasPermission(interaction.member, interaction.guildId)) {
-          return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
+        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ content: "❌ Admin only.", ephemeral: true }).catch(() => {});
         }
         
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
@@ -908,14 +871,14 @@ client.on("interactionCreate", async interaction => {
         try {
           const role = interaction.options.getRole("role");
           
-          const guildScripts = await getScriptsInGuild(interaction.guildId);
+          const myScripts = await getScriptsByOwner(interaction.user.id);
           
-          if (guildScripts.length === 0) {
-            return interaction.editReply({ content: "❌ No scripts found in this guild." }).catch(() => {});
+          if (myScripts.length === 0) {
+            return interaction.editReply({ content: "❌ You don't have any scripts yet." }).catch(() => {});
           }
 
-          if (guildScripts.length === 1) {
-            const scriptId = guildScripts[0].id;
+          if (myScripts.length === 1) {
+            const scriptId = myScripts[0].id;
             const cfg = readConfig();
             if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
             if (!cfg[interaction.guildId].buyerRoles) cfg[interaction.guildId].buyerRoles = {};
@@ -924,13 +887,13 @@ client.on("interactionCreate", async interaction => {
             writeConfig(cfg);
 
             return interaction.editReply({ 
-              content: `✅ Buyer role <@&${role.id}> has been set for script **${guildScripts[0].name}**!` 
+              content: `✅ Buyer role <@&${role.id}> has been set for script **${myScripts[0].name}**!` 
             }).catch(() => {});
           }
 
           buyerRoleTempData.set(interaction.user.id, { roleId: role.id });
 
-          const sortedScripts = guildScripts.sort((a, b) => a.name.localeCompare(b.name));
+          const sortedScripts = myScripts.sort((a, b) => a.name.localeCompare(b.name));
 
           const options = sortedScripts.slice(0, 25).map(s => 
             new StringSelectMenuOptionBuilder()
@@ -965,22 +928,22 @@ client.on("interactionCreate", async interaction => {
           const title = interaction.options.getString("title");
           const description = interaction.options.getString("description");
           
-          const guildScripts = await getScriptsInGuild(interaction.guildId);
+          const myScripts = await getScriptsByOwner(interaction.user.id);
           
-          if (guildScripts.length === 0) {
-            return interaction.editReply({ content: "❌ No scripts found in this guild." }).catch(() => {});
+          if (myScripts.length === 0) {
+            return interaction.editReply({ content: "❌ You don't have any scripts yet." }).catch(() => {});
           }
 
-          if (guildScripts.length === 1) {
-            await sendPanelEmbed(interaction.channel, title, description, guildScripts[0].id, guildScripts[0].name, guildScripts[0].ownerId, interaction.guildId);
-            return interaction.editReply({ content: `✅ Panel created with script: **${guildScripts[0].name}**!` }).catch(() => {});
+          if (myScripts.length === 1) {
+            await sendPanelEmbed(interaction.channel, title, description, myScripts[0].id, myScripts[0].name, interaction.user.id, interaction.guildId);
+            return interaction.editReply({ content: `✅ Panel created with script: **${myScripts[0].name}**!` }).catch(() => {});
           }
 
           panelTempData.set(interaction.user.id, { title, description });
 
           setTimeout(() => panelTempData.delete(interaction.user.id), 5 * 60 * 1000);
 
-          const sortedScripts = guildScripts.sort((a, b) => a.name.localeCompare(b.name));
+          const sortedScripts = myScripts.sort((a, b) => a.name.localeCompare(b.name));
 
           const options = sortedScripts.slice(0, 25).map(s => 
             new StringSelectMenuOptionBuilder()
@@ -1010,7 +973,6 @@ client.on("interactionCreate", async interaction => {
         }
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
-          // Untuk delete, hanya bisa hapus script milik sendiri
           const myScripts = await getScriptsByOwner(interaction.user.id);
           if (myScripts.length === 0) {
             return interaction.editReply({ content: "❌ You don't have any scripts yet." }).catch(() => {});
@@ -1030,7 +992,7 @@ client.on("interactionCreate", async interaction => {
             .addOptions(options);
 
           return interaction.editReply({ 
-            content: "Select the script to delete permanently (only your scripts):", 
+            content: "Select the script to delete permanently:", 
             components: [new ActionRowBuilder().addComponents(select)] 
           }).catch(() => {});
         } catch (err) {
@@ -1091,16 +1053,16 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ Select a user or role!" }).catch(() => {});
           }
 
-          const guildScripts = await getScriptsInGuild(interaction.guildId);
-          if (guildScripts.length === 0) {
-            return interaction.editReply({ content: "❌ No scripts found in this guild." }).catch(() => {});
+          const myScripts = await getScriptsByOwner(interaction.user.id);
+          if (myScripts.length === 0) {
+            return interaction.editReply({ content: "❌ You don't have any scripts yet." }).catch(() => {});
           }
 
           const targetType = targetUser ? "user" : "role";
           const targetId = targetUser ? targetUser.id : targetRole.id;
 
-          if (guildScripts.length === 1) {
-            const scriptId = guildScripts[0].id;
+          if (myScripts.length === 1) {
+            const scriptId = myScripts[0].id;
             const keys = readKeys();
             const expiry = days === 0 ? null : new Date(Date.now() + days * 86400000).toISOString();
             const cfg = readConfig()[interaction.guildId] || {};
@@ -1129,7 +1091,7 @@ client.on("interactionCreate", async interaction => {
 
               const channelTag = panelChannelId ? `<#${panelChannelId}>` : `<#${interaction.channelId}>`;
               return interaction.editReply({ 
-                content: `<@${targetUser.id}> You have been whitelisted for **${guildScripts[0].name}**!\nYou can access the script via this message --> ${channelTag}` 
+                content: `<@${targetUser.id}> You have been whitelisted for **${myScripts[0].name}**!\nYou can access the script via this message --> ${channelTag}` 
               }).catch(() => {});
             }
 
@@ -1155,14 +1117,14 @@ client.on("interactionCreate", async interaction => {
 
               const channelTag = panelChannelId ? `<#${panelChannelId}>` : `<#${interaction.channelId}>`;
               return interaction.editReply({ 
-                content: `<@&${targetRole.id}> You have been whitelisted for **${guildScripts[0].name}**! (${addedCount} members)\nYou can access the script via this message --> ${channelTag}` 
+                content: `<@&${targetRole.id}> You have been whitelisted for **${myScripts[0].name}**! (${addedCount} members)\nYou can access the script via this message --> ${channelTag}` 
               }).catch(() => {});
             }
           }
 
           await interaction.editReply({ content: "_ _" }).catch(() => {});
           
-          const sortedScripts = guildScripts.sort((a, b) => a.name.localeCompare(b.name));
+          const sortedScripts = myScripts.sort((a, b) => a.name.localeCompare(b.name));
 
           const options = sortedScripts.slice(0, 25).map(s => 
             new StringSelectMenuOptionBuilder()
@@ -1178,7 +1140,7 @@ client.on("interactionCreate", async interaction => {
           return interaction.followUp({ 
             content: `Select a script to whitelist:`, 
             components: [new ActionRowBuilder().addComponents(select)],
-            ephemeral: false
+            ephemeral: true
           }).catch(() => {});
         } catch (err) {
           console.error("Whitelist command error:", err);
@@ -1191,7 +1153,7 @@ client.on("interactionCreate", async interaction => {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
         }
-        await interaction.deferReply({ ephemeral: false }).catch(() => {});
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
           const targetUser = interaction.options.getUser("user");
           const reason = interaction.options.getString("reason") || "No reason";
@@ -1211,18 +1173,16 @@ client.on("interactionCreate", async interaction => {
           const newKeys = keys.filter(k => String(k.userId) !== String(targetUser.id));
           writeKeys(newKeys);
 
-          // Hapus buyer role dari guild ini saja
           const cfg = readConfig()[interaction.guildId] || {};
-          const buyerRoleId = cfg.buyerRole;
-          if (buyerRoleId) {
+          if (cfg.buyerRole) {
             try {
               const member = await interaction.guild.members.fetch(targetUser.id);
-              await member.roles.remove(buyerRoleId);
+              await member.roles.remove(cfg.buyerRole);
             } catch {}
           }
 
           return interaction.editReply({ 
-            content: `🚫 **<@${targetUser.id}> has been Blacklisted!**\nReason: ${reason}\nAll script access has been revoked.` 
+            content: `🚫 **<@${targetUser.id}> has been Blacklisted!**\nAll script access and buyer role has been revoked.` 
           }).catch(() => {});
         } catch (err) {
           console.error("Blacklist error:", err);
@@ -1268,13 +1228,13 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ Maximum 50 keys per generation." }).catch(() => {});
           }
 
-          const guildScripts = await getScriptsInGuild(interaction.guildId);
-          if (guildScripts.length === 0) {
-            return interaction.editReply({ content: "❌ No scripts found in this guild." }).catch(() => {});
+          const myScripts = await getScriptsByOwner(interaction.user.id);
+          if (myScripts.length === 0) {
+            return interaction.editReply({ content: "❌ You don't have any scripts yet." }).catch(() => {});
           }
 
-          if (guildScripts.length === 1) {
-            const scriptId = guildScripts[0].id;
+          if (myScripts.length === 1) {
+            const scriptId = myScripts[0].id;
             const keys = readKeys();
             const generated = [];
             const expiry = days === 0 ? null : new Date(Date.now() + days * 86400000).toISOString();
@@ -1292,11 +1252,11 @@ client.on("interactionCreate", async interaction => {
 
             const keyList = generated.map(k => `\`${k}\``).join("\n");
             return interaction.editReply({ 
-              content: `✅ **${amount} key(s)** generated for script **${guildScripts[0].name}**!\n\n${keyList}` 
+              content: `✅ **${amount} key(s)** generated for script **${myScripts[0].name}**!\n\n${keyList}` 
             }).catch(() => {});
           }
 
-          const sortedScripts = guildScripts.sort((a, b) => a.name.localeCompare(b.name));
+          const sortedScripts = myScripts.sort((a, b) => a.name.localeCompare(b.name));
 
           const options = sortedScripts.slice(0, 25).map(s => 
             new StringSelectMenuOptionBuilder()
@@ -1366,9 +1326,9 @@ client.on("interactionCreate", async interaction => {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
           const keys = readKeys();
-          const guildScripts = await getScriptsInGuild(interaction.guildId);
+          const myScripts = await getScriptsByOwner(interaction.user.id);
           const scriptMap = {};
-          guildScripts.forEach(s => { scriptMap[s.id] = s.name; });
+          myScripts.forEach(s => { scriptMap[s.id] = s.name; });
 
           const myKeys = keys.filter(k => k.createdBy === interaction.user.id);
 
@@ -1387,7 +1347,7 @@ client.on("interactionCreate", async interaction => {
           });
 
           sortedKeys.slice(0, 25).forEach(k => {
-            const scriptName = scriptMap[k.scriptId] || "❓ Script not in this guild";
+            const scriptName = scriptMap[k.scriptId] || "❓ Script deleted";
             const status = k.userId ? `✅ Used by <@${k.userId}>` : "⏳ Unused";
             const expiryText = k.expiry ? new Date(k.expiry).toLocaleDateString() : "♾️ Lifetime";
 
@@ -1427,12 +1387,11 @@ client.on("interactionCreate", async interaction => {
           const userKeys = keys.filter(k => String(k.userId) === String(targetUser.id));
 
           const isBlacklisted_ = isBlacklisted(targetUser.id);
-          
-          // Cek buyer role di guild ini saja
-          const cfg = readConfig()[interaction.guildId] || {};
-          const buyerRoles = Object.values(cfg.buyerRoles || {});
-          const hasBuyerRole = buyerRoles.some(roleId => member.roles.cache.has(roleId)) || 
-                               (cfg.buyerRole && member.roles.cache.has(cfg.buyerRole));
+          const hasBuyerRole = member.roles.cache.some(r => {
+            const cfg = readConfig()[interaction.guildId] || {};
+            const buyerRoles = Object.values(cfg.buyerRoles || {});
+            return buyerRoles.includes(r.id) || r.id === cfg.buyerRole;
+          });
 
           const embed = new EmbedBuilder()
             .setTitle(`👤 User Info: ${targetUser.username}`)
