@@ -698,7 +698,7 @@ app.get("/api/freemode/:guildId/:scriptId", (req, res) => {
   res.json({ freeMode: isFreeMode });
 });
 
-// ==================== FILES LOADER ====================
+// ==================== FILES LOADER - TAMPILAN WEB KEREN ====================
 app.get("/files/loaders/:id.lua", (req, res) => {
   const db = readDB();
   const script = db.find((x) => x.id === req.params.id);
@@ -719,7 +719,7 @@ app.get("/files/loaders/:id.lua", (req, res) => {
 
   const base = getBaseUrl(req);
   
-  // CEK APAKAH SCRIPT DALAM MODE FREEMODE
+  // CEK FREEMODE
   const botConfig = readBotConfig();
   const isFreeMode = botConfig[script.guildId]?.freeMode?.[script.id] === true;
   
@@ -737,103 +737,173 @@ app.get("/files/loaders/:id.lua", (req, res) => {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SpideyProtect • ${escapeHtml(script.name)}</title>
 <style>
-* { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; width: 100%; min-height: 100%; font-family: Inter, Arial, Helvetica, sans-serif;
-  background: radial-gradient(circle at 50% -10%, rgba(0,105,255,.28), transparent 40%),
-              radial-gradient(circle at 0% 50%, rgba(220,0,0,.22), transparent 35%), #020713;
-  color: white; }
-body { min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 25px 15px; }
-.page { width: 100%; max-width: 760px; }
-.brand { text-align: center; margin-bottom: 20px; }
-.logo { width: 58px; height: 58px; margin: 0 auto 10px; border-radius: 17px; display: flex; align-items: center;
-  justify-content: center; font-size: 30px; background: linear-gradient(135deg, #ffffff, #dce9ff); color: #d40000;
-  box-shadow: 0 0 35px rgba(0,110,255,.25), 0 0 25px rgba(255,0,0,.18); }
-.brand h1 { margin: 0; font-size: 26px; font-weight: 850; letter-spacing: -.5px; }
-.brand p { margin: 6px 0 0; color: rgba(255,255,255,.55); font-size: 12px; }
-.card { width: 100%; padding: 25px; border-radius: 20px; border: 1px solid rgba(90,150,255,.18);
-  background: linear-gradient(145deg, rgba(8,31,57,.92), rgba(4,15,28,.95));
-  box-shadow: 0 25px 70px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.04); }
-.card-title { text-align: center; font-size: 27px; font-weight: 850; color: #168cff; margin-bottom: 9px;
-  text-shadow: 0 0 18px rgba(0,130,255,.25); }
-.description { text-align: center; line-height: 1.55; font-size: 14px; color: rgba(255,255,255,.62);
-  max-width: 570px; margin: 0 auto 25px; }
-.script-name { text-align: center; margin-bottom: 15px; color: white; font-size: 13px; font-weight: 700; }
-.script-name span { color: #ff4242; }
-.free-mode-badge { display: inline-block; background: #00c853; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 800; margin-left: 8px; }
-.loader-title { margin-bottom: 7px; font-size: 11px; font-weight: 800; letter-spacing: 1px; color: rgba(255,255,255,.55); }
-.loader-wrap { width: 100%; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin; border-radius: 12px; background: #02060c;
-  border: 1px solid rgba(255,255,255,.1); box-shadow: inset 0 0 20px rgba(0,0,0,.25); }
-.loader-wrap::-webkit-scrollbar { height: 7px; }
-.loader-wrap::-webkit-scrollbar-track { background: #060b12; }
-.loader-wrap::-webkit-scrollbar-thumb { background: linear-gradient(90deg, #e00000, #168cff); border-radius: 20px; }
-.loader-code { display: block; width: max-content; min-width: 100%; padding: 16px 18px; color: #e7edf7;
-  font-family: "Courier New", monospace; font-size: 13px; line-height: 1.5; white-space: pre; user-select: all; }
-.copy-button { width: 100%; margin-top: 12px; padding: 13px; border: none; border-radius: 11px; cursor: pointer;
-  color: white; font-size: 14px; font-weight: 800;
-  background: linear-gradient(90deg, #e00000 0%, #f00000 35%, #087cff 100%);
-  box-shadow: 0 8px 25px rgba(0,75,255,.12); transition: transform .2s, filter .2s; }
-.copy-button:hover { transform: translateY(-2px); filter: brightness(1.08); }
-.copy-button:active { transform: translateY(0); }
-.security { margin-top: 18px; padding: 14px; border-radius: 12px; background: rgba(255,255,255,.025);
-  border: 1px solid rgba(255,255,255,.07); text-align: center; color: rgba(255,255,255,.55);
-  font-size: 12px; line-height: 1.5; }
-.security strong { color: #ffffff; }
-.footer { margin-top: 15px; text-align: center; color: rgba(255,255,255,.3); font-size: 10px; }
-.footer b { color: #168cff; }
-@media(max-width:600px) {
-  body { padding: 18px 12px; }
-  .card { padding: 19px; border-radius: 18px; }
-  .card-title { font-size: 23px; }
-  .description { font-size: 13px; }
-  .loader-code { font-size: 12px; padding: 15px; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  min-height: 100vh;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: radial-gradient(circle at 10% 0%, rgba(255,0,0,0.25), transparent 35%),
+              radial-gradient(circle at 90% 100%, rgba(0,110,255,0.20), transparent 35%),
+              #050505;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.card {
+  max-width: 650px;
+  width: 100%;
+  padding: 35px 30px;
+  border-radius: 20px;
+  border: 1px solid rgba(90,150,255,0.18);
+  background: linear-gradient(145deg, rgba(8,31,57,0.92), rgba(4,15,28,0.95));
+  box-shadow: 0 25px 70px rgba(0,0,0,0.6);
+  text-align: center;
+}
+.logo {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 14px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  background: linear-gradient(135deg, #ffffff, #dce9ff);
+  color: #d40000;
+  box-shadow: 0 0 35px rgba(0,110,255,0.25), 0 0 25px rgba(255,0,0,0.18);
+}
+h1 { font-size: 24px; font-weight: 850; color: #fff; margin-bottom: 4px; }
+.subtitle { color: rgba(255,255,255,0.5); font-size: 12px; margin-bottom: 20px; }
+.protected-badge {
+  display: inline-block;
+  background: linear-gradient(90deg, #d40000, #006eff);
+  padding: 4px 16px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 800;
+  color: white;
+  letter-spacing: 1px;
+  margin-bottom: 18px;
+}
+.script-name {
+  color: rgba(255,255,255,0.7);
+  font-size: 13px;
+  margin-bottom: 18px;
+}
+.script-name span { color: #ff4242; font-weight: 700; }
+.free-badge {
+  display: inline-block;
+  background: #00c853;
+  color: white;
+  padding: 2px 12px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 800;
+  margin-left: 6px;
+}
+.loader-label {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: rgba(255,255,255,0.4);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+.code-block {
+  width: 100%;
+  background: #02060c;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  padding: 16px 18px;
+  overflow-x: auto;
+  text-align: left;
+  box-shadow: inset 0 0 30px rgba(0,0,0,0.4);
+}
+.code-block code {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  color: #e7edf7;
+  white-space: pre;
+  word-break: break-all;
+  display: block;
+}
+.copy-btn {
+  width: 100%;
+  margin-top: 12px;
+  padding: 13px;
+  border: none;
+  border-radius: 11px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 800;
+  color: white;
+  background: linear-gradient(90deg, #d40000, #006eff);
+  transition: transform 0.2s, filter 0.2s;
+}
+.copy-btn:hover { transform: translateY(-2px); filter: brightness(1.08); }
+.copy-btn:active { transform: translateY(0); }
+.footer-text {
+  margin-top: 16px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.25);
+}
+.footer-text strong { color: #006eff; }
+.security-note {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.05);
+  font-size: 12px;
+  color: rgba(255,255,255,0.4);
+  line-height: 1.6;
+}
+.security-note strong { color: #fff; }
+@media(max-width:500px) {
+  .card { padding: 24px 18px; }
+  .code-block code { font-size: 12px; }
 }
 </style>
 </head>
 <body>
-<div class="page">
-  <div class="brand">
-    <div class="logo">🕷️</div>
-    <h1>SpideyProtect</h1>
-    <p>Lua Protection System</p>
+<div class="card">
+  <div class="logo">🕷️</div>
+  <h1>SpideyProtect</h1>
+  <div class="subtitle">Lua Protection System</div>
+  <div class="protected-badge">🔒 SOURCE PROTECTED</div>
+  <div class="script-name">
+    SCRIPT: <span>${escapeHtml(script.name)}</span>
+    ${isFreeMode ? '<span class="free-badge">FREE MODE</span>' : ''}
   </div>
-  <div class="card">
-    <div class="card-title">This script can't be viewed in a browser</div>
-    <div class="description">
-      For security, the source is only delivered to the script at runtime.
-      Use the loader below in your script.
-    </div>
-    <div class="script-name">SCRIPT: <span>${escapeHtml(script.name)}</span> ${isFreeMode ? '<span class="free-mode-badge">FREE MODE</span>' : ''}</div>
-    <div class="loader-title">LOADER</div>
-    <div class="loader-wrap">
-      <code class="loader-code" id="loaderCode">${escapeHtml(loaderCode)}</code>
-    </div>
-    <button class="copy-button" onclick="copyLoader()">Copy loader</button>
-    <div class="security">
-      🔒 <strong>Source Protected</strong><br>
-      The original source is not displayed on this page.
-      ${isFreeMode ? '<br>🆓 <strong>Free Mode Active</strong> - No key required!' : ''}
-    </div>
+  <div class="loader-label">📜 LOADER</div>
+  <div class="code-block">
+    <code id="loaderCode">${escapeHtml(loaderCode)}</code>
   </div>
-  <div class="footer">Protected by <b>SpideyProtect</b> 🕷️</div>
+  <button class="copy-btn" onclick="copyLoader()">📋 Copy Loader</button>
+  <div class="security-note">
+    🔒 <strong>Source Protected</strong> — The original source is never displayed here.<br>
+    ${isFreeMode ? '🆓 <strong>Free Mode Active</strong> — No key required!' : '🔑 <strong>Key Required</strong> — Use a valid key to access the script.'}
+  </div>
+  <div class="footer-text">Protected by <strong>SpideyProtect</strong> 🕷️</div>
 </div>
 <script>
 const loader = ${JSON.stringify(loaderCode)};
 async function copyLoader() {
-  const button = document.querySelector(".copy-button");
+  const btn = document.querySelector(".copy-btn");
   try {
     await navigator.clipboard.writeText(loader);
-    button.textContent = "✓ Loader copied!";
-    setTimeout(() => { button.textContent = "Copy loader"; }, 1800);
+    btn.textContent = "✅ Copied!";
+    setTimeout(() => { btn.textContent = "📋 Copy Loader"; }, 1800);
   } catch {
-    const textarea = document.createElement("textarea");
-    textarea.value = loader;
-    document.body.appendChild(textarea);
-    textarea.select();
+    const ta = document.createElement("textarea");
+    ta.value = loader;
+    document.body.appendChild(ta);
+    ta.select();
     document.execCommand("copy");
-    textarea.remove();
-    button.textContent = "✓ Loader copied!";
-    setTimeout(() => { button.textContent = "Copy loader"; }, 1800);
+    ta.remove();
+    btn.textContent = "✅ Copied!";
+    setTimeout(() => { btn.textContent = "📋 Copy Loader"; }, 1800);
   }
 }
 </script>
