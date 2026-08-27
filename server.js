@@ -538,7 +538,7 @@ app.get("/api/execute/:id", (req, res) => {
     .send(source);
 });
 
-// ==================== LOADER ENDPOINT - DIPERBAIKI ====================
+// ==================== LOADER ENDPOINT - DIPERBAIKI UNTUK FREEMODE ====================
 app.get("/api/loader/:id.lua", (req, res) => {
   const scriptId = req.params.id;
   const key = req.query.key || req.headers["x-script-key"];
@@ -559,8 +559,37 @@ app.get("/api/loader/:id.lua", (req, res) => {
   const botConfig = readBotConfig();
   const isFreeMode = botConfig[script.guildId]?.freeMode?.[scriptId] === true;
 
-  // JIKA FREEMODE ENABLED, LANGSUNG KEMBALIKAN SOURCE TANPA KEY
-  if (isFreeMode) {
+  // Jika tidak ada key, return loader
+  if (!key) {
+    const base = req.headers["x-forwarded-proto"]
+      ? `${req.headers["x-forwarded-proto"]}://${req.get("host")}`
+      : `${req.protocol}://${req.get("host")}`;
+    const selfUrl = `${base}/api/loader/${scriptId}.lua`;
+    
+    // JIKA FREEMODE ENABLED, BUAT LOADER YANG LANGSUNG AMBIL SOURCE TANPA KEY
+    if (isFreeMode) {
+      const luaLoader = `-- SpideyProtect Loader (FREE MODE)\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua?freemode=true"))()\n`;
+      return res
+        .status(200)
+        .type("text/plain")
+        .set("Cache-Control", "no-store")
+        .send(luaLoader);
+    }
+    
+    // NORMAL MODE: loader yang meminta key
+    const luaLoader = `-- SpideyProtect Loader\nif not script_key or tostring(script_key) == "" then\n    local plr = game:GetService("Players").LocalPlayer\n    if plr then\n        plr:Kick("\\nNO KEY PROVIDED\\n")\n    end\n    return\nend\nlocal ok, hwid = pcall(function()\n    return game:GetService("RbxAnalyticsService"):GetClientId()\nend)\nif not ok then hwid = tostring(game:GetService("Players").LocalPlayer.UserId) end\nlocal url = "${selfUrl}?key=" .. tostring(script_key) .. "&hwid=" .. tostring(hwid)\nloadstring(game:HttpGet(url, true))()\n`;
+    return res
+      .status(200)
+      .type("text/plain")
+      .set("Cache-Control", "no-store")
+      .send(luaLoader);
+  }
+
+  // CEK APAKAH FREEMODE AKTIF DAN REQUEST DARI LOADER FREEMODE
+  const isFreeModeRequest = req.query.freemode === "true";
+  
+  if (isFreeModeRequest && isFreeMode) {
+    // FREEMODE: langsung kirim source tanpa cek key
     const filepath = path.join(SCRIPTS_DIR, script.filename);
     if (!fs.existsSync(filepath)) {
       return res
@@ -577,21 +606,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
       .send(source);
   }
 
-  // Jika tidak ada key, return loader yang meminta key
-  if (!key) {
-    const base = req.headers["x-forwarded-proto"]
-      ? `${req.headers["x-forwarded-proto"]}://${req.get("host")}`
-      : `${req.protocol}://${req.get("host")}`;
-    const selfUrl = `${base}/api/loader/${scriptId}.lua`;
-    const luaLoader = `-- SpideyProtect Loader\nif not script_key or tostring(script_key) == "" then\n    local plr = game:GetService("Players").LocalPlayer\n    if plr then\n        plr:Kick("\\nNO KEY PROVIDED\\n")\n    end\n    return\nend\nlocal ok, hwid = pcall(function()\n    return game:GetService("RbxAnalyticsService"):GetClientId()\nend)\nif not ok then hwid = tostring(game:GetService("Players").LocalPlayer.UserId) end\nlocal url = "${selfUrl}?key=" .. tostring(script_key) .. "&hwid=" .. tostring(hwid)\nloadstring(game:HttpGet(url, true))()\n`;
-    return res
-      .status(200)
-      .type("text/plain")
-      .set("Cache-Control", "no-store")
-      .send(luaLoader);
-  }
-
-  // NORMAL MODE: cek key
+  // NORMAL MODE: cek key seperti biasa
   const keys = readKeys();
   const keyData = keys.find((k) => k.key === key.toLowerCase().trim());
 
@@ -640,7 +655,6 @@ app.get("/api/loader/:id.lua", (req, res) => {
     keyData.hwid = clientHwid;
   }
 
-  // SCRIPT SUDAH DIAMBIL DI ATAS
   if (!script.enabled) {
     return res
       .status(403)
@@ -704,7 +718,17 @@ app.get("/files/loaders/:id.lua", (req, res) => {
   }
 
   const base = getBaseUrl(req);
-  const loaderCode = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua"))()`;
+  
+  // CEK APAKAH SCRIPT DALAM MODE FREEMODE
+  const botConfig = readBotConfig();
+  const isFreeMode = botConfig[script.guildId]?.freeMode?.[script.id] === true;
+  
+  let loaderCode;
+  if (isFreeMode) {
+    loaderCode = `-- SpideyProtect Loader (FREE MODE)\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua?freemode=true"))()`;
+  } else {
+    loaderCode = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua"))()`;
+  }
 
   res.status(200).send(`<!DOCTYPE html>
 <html lang="en">
@@ -735,6 +759,7 @@ body { min-height: 100vh; display: flex; justify-content: center; align-items: c
   max-width: 570px; margin: 0 auto 25px; }
 .script-name { text-align: center; margin-bottom: 15px; color: white; font-size: 13px; font-weight: 700; }
 .script-name span { color: #ff4242; }
+.free-mode-badge { display: inline-block; background: #00c853; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 800; margin-left: 8px; }
 .loader-title { margin-bottom: 7px; font-size: 11px; font-weight: 800; letter-spacing: 1px; color: rgba(255,255,255,.55); }
 .loader-wrap { width: 100%; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
   scrollbar-width: thin; border-radius: 12px; background: #02060c;
@@ -778,7 +803,7 @@ body { min-height: 100vh; display: flex; justify-content: center; align-items: c
       For security, the source is only delivered to the script at runtime.
       Use the loader below in your script.
     </div>
-    <div class="script-name">SCRIPT: <span>${escapeHtml(script.name)}</span></div>
+    <div class="script-name">SCRIPT: <span>${escapeHtml(script.name)}</span> ${isFreeMode ? '<span class="free-mode-badge">FREE MODE</span>' : ''}</div>
     <div class="loader-title">LOADER</div>
     <div class="loader-wrap">
       <code class="loader-code" id="loaderCode">${escapeHtml(loaderCode)}</code>
@@ -787,6 +812,7 @@ body { min-height: 100vh; display: flex; justify-content: center; align-items: c
     <div class="security">
       🔒 <strong>Source Protected</strong><br>
       The original source is not displayed on this page.
+      ${isFreeMode ? '<br>🆓 <strong>Free Mode Active</strong> - No key required!' : ''}
     </div>
   </div>
   <div class="footer">Protected by <b>SpideyProtect</b> 🕷️</div>
