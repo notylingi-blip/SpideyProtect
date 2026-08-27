@@ -536,7 +536,7 @@ app.get("/api/execute/:id", (req, res) => {
     .send(source);
 });
 
-// ==================== LOADER ENDPOINT - WITH KICK ====================
+// ==================== LOADER ENDPOINT - FIXED ====================
 app.get("/api/loader/:id.lua", (req, res) => {
   const scriptId = req.params.id;
   const db = readDB();
@@ -580,29 +580,24 @@ end
     const keys = readKeys();
     const keyData = keys.find((k) => k.key === key.toLowerCase().trim());
 
-    // KEY TIDAK VALID → KICK
     if (!keyData) {
       return res.status(200).type("text/plain").set("Cache-Control", "no-store")
         .send(kickPlayer("Invalid Key"));
     }
 
-    // KEY EXPIRED → KICK
     if (keyData.expiry && new Date(keyData.expiry) < new Date()) {
       return res.status(200).type("text/plain").set("Cache-Control", "no-store")
         .send(kickPlayer("Key Expired"));
     }
 
-    // KEY TIDAK VALID UNTUK SCRIPT INI → KICK
     if (keyData.scriptId && keyData.scriptId !== scriptId) {
       return res.status(200).type("text/plain").set("Cache-Control", "no-store")
         .send(kickPlayer("Key Not Valid For This Script"));
     }
 
-    // HWID check
     const clientHwid = req.query.hwid ? String(req.query.hwid).trim() : null;
     if (keyData.hwid) {
       if (!clientHwid || clientHwid !== keyData.hwid) {
-        // HWID MISMATCH → KICK
         return res.status(200).type("text/plain").set("Cache-Control", "no-store")
           .send(kickPlayer("HWID Mismatch"));
       }
@@ -616,7 +611,6 @@ end
       keyData.hwid = clientHwid;
     }
 
-    // SCRIPT DISABLED → KICK
     if (!script.enabled) {
       return res.status(200).type("text/plain").set("Cache-Control", "no-store")
         .send(kickPlayer("Script Disabled"));
@@ -651,9 +645,11 @@ end
   }
 
   // ===== TIDAK ADA KEY/FREEMODE → TAMPILKAN HALAMAN WEB =====
+  // FORMAT LOADER: script_key di baris pertama, lalu loadstring dengan URL saja
   let loaderCode;
   if (isFreeMode) {
-    loaderCode = `loadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua?freemode=1"))()`;
+    // FREE MODE: Tampilkan tulisan FREE MODE di loader
+    loaderCode = `-- FREE MODE ENABLED\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua?freemode=1"))()`;
   } else {
     loaderCode = `script_key="YOUR_KEY_HERE"\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()`;
   }
