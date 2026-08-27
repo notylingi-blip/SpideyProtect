@@ -564,13 +564,12 @@ app.get("/api/loader/:id.lua", (req, res) => {
 
   // Jika tidak ada key, tampilkan halaman web keren dengan loader
   if (!key) {
-    const selfUrl = `${base}/api/loader/${scriptId}.lua`;
-    
+    // FORMAT LOADER SEPERTI YANG DIMINTA
     let loaderCode;
     if (isFreeMode) {
-      loaderCode = `-- SpideyProtect Loader (FREE MODE)\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua?freemode=true"))()\n`;
+      loaderCode = `loadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua?freemode=true"))()`;
     } else {
-      loaderCode = `-- SpideyProtect Loader\nif not script_key or tostring(script_key) == "" then\n    local plr = game:GetService("Players").LocalPlayer\n    if plr then\n        plr:Kick("\\nNO KEY PROVIDED\\n")\n    end\n    return\nend\nlocal ok, hwid = pcall(function()\n    return game:GetService("RbxAnalyticsService"):GetClientId()\nend)\nif not ok then hwid = tostring(game:GetService("Players").LocalPlayer.UserId) end\nlocal url = "${selfUrl}?key=" .. tostring(script_key) .. "&hwid=" .. tostring(hwid)\nloadstring(game:HttpGet(url, true))()\n`;
+      loaderCode = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()`;
     }
 
     return res.status(200).send(`<!DOCTYPE html>
@@ -866,7 +865,6 @@ app.get("/api/freemode/:guildId/:scriptId", (req, res) => {
 
 // ==================== FILES LOADER - REDIRECT KE API LOADER ====================
 app.get("/files/loaders/:id.lua", (req, res) => {
-  // Redirect ke /api/loader/:id.lua yang sudah memiliki tampilan keren
   res.redirect(`/api/loader/${req.params.id}.lua`);
 });
 
