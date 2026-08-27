@@ -131,6 +131,17 @@ function isAdmin(req, res, next) {
   next();
 }
 
+// Kick script helper - always plain Lua, never HTML
+function kickLua(reason) {
+  const safeReason = String(reason).replace(/"/g, '\\"');
+  return (
+    'local plr = game:GetService("Players").LocalPlayer\n' +
+    "if plr then\n" +
+    `    plr:Kick("\\n${safeReason}\\n")\n` +
+    "end"
+  );
+}
+
 // ==================== AUTH ====================
 
 app.get("/login", (req, res) => {
@@ -539,11 +550,12 @@ app.get("/api/execute/:id", (req, res) => {
 // ==================== LOADER ENDPOINT - TAMPILAN WEB KEREN ====================
 app.get("/api/loader/:id.lua", (req, res) => {
   const scriptId = req.params.id;
-  const key = req.query.key || req.headers["x-script-key"];
+  const rawKey = req.query.key || req.headers["x-script-key"] || "";
+  const key = String(rawKey).trim();
 
   const db = readDB();
   const script = db.find((x) => x.id === scriptId);
-  
+
   if (!script) {
     return res.status(404).send(`<!DOCTYPE html>
 <html>
@@ -562,17 +574,23 @@ app.get("/api/loader/:id.lua", (req, res) => {
   const isFreeMode = botConfig[script.guildId]?.freeMode?.[scriptId] === true;
   const base = getBaseUrl(req);
 
-  // Jika tidak ada key, tampilkan halaman web keren dengan loader
-  if (!key) {
-    // FORMAT LOADER DENGAN BARIS BARU YANG SEBENARNYA (bukan \n)
+  // Apakah request ini datang dari executor (bawa 'key' param, meski kosong) atau freemode call?
+  const hasKeyParam = Object.prototype.hasOwnProperty.call(req.query, "key");
+  const isFreeModeRequest = req.query.freemode === "true";
+  const isExecutorRequest = hasKeyParam || isFreeModeRequest;
+
+  // ============ BROWSER VIEW (hanya kalau BUKAN request dari executor) ============
+  if (!isExecutorRequest) {
     let loaderCode;
     if (isFreeMode) {
       loaderCode = `loadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua?freemode=true"))()`;
     } else {
-      loaderCode = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()`;
+      loaderCode =
+        `local key = "YOUR_KEY_HERE"\n` +
+        `local hwid = game:GetService("RbxAnalyticsService"):GetClientId()\n` +
+        `loadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua?key="..key.."&hwid="..hwid))()`;
     }
 
-    // TAMPILAN HTML DENGAN LOADER YANG BISA DI-RUN
     return res.status(200).send(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -754,9 +772,9 @@ async function copyLoader() {
 </html>`);
   }
 
-  // Jika ada key, proses seperti biasa (untuk executor)
-  const isFreeModeRequest = req.query.freemode === "true";
-  
+  // ============ EXECUTOR PATH - selalu balas plain Lua, gak pernah HTML ============
+
+  // Free mode: langsung kirim source, gak perlu key
   if (isFreeModeRequest && isFreeMode) {
     const filepath = path.join(SCRIPTS_DIR, script.filename);
     if (!fs.existsSync(filepath)) {
@@ -774,31 +792,40 @@ async function copyLoader() {
       .send(source);
   }
 
+  // Key kosong, belum diganti dari placeholder, atau gak ada sama sekali -> KICK
+  if (!key || key.toUpperCase() === "YOUR_KEY_HERE") {
+    return res
+      .status(200)
+      .type("text/plain")
+      .set("Cache-Control", "no-store")
+      .send(kickLua("Missing or invalid key. Set your key in the loader script."));
+  }
+
   const keys = readKeys();
-  const keyData = keys.find((k) => k.key === key.toLowerCase().trim());
+  const keyData = keys.find((k) => k.key === key.toLowerCase());
 
   if (!keyData) {
     return res
-      .status(403)
+      .status(200)
       .type("text/plain")
       .set("Cache-Control", "no-store")
-      .send("-- SpideyProtect: Invalid key");
+      .send(kickLua("Invalid key"));
   }
 
   if (keyData.expiry && new Date(keyData.expiry) < new Date()) {
     return res
-      .status(403)
+      .status(200)
       .type("text/plain")
       .set("Cache-Control", "no-store")
-      .send("-- SpideyProtect: Key expired");
+      .send(kickLua("Key expired"));
   }
 
   if (keyData.scriptId && keyData.scriptId !== scriptId) {
     return res
-      .status(403)
+      .status(200)
       .type("text/plain")
       .set("Cache-Control", "no-store")
-      .send("-- SpideyProtect: Key not valid for this script");
+      .send(kickLua("Key not valid for this script"));
   }
 
   const clientHwid = req.query.hwid ? String(req.query.hwid).trim() : null;
@@ -809,9 +836,10 @@ async function copyLoader() {
         .status(200)
         .type("text/plain")
         .set("Cache-Control", "no-store")
-        .send('local plr = game:GetService("Players").LocalPlayer\nif plr then\n    plr:Kick("\\nHWID Mismatch\\n")\nend');
+        .send(kickLua("HWID Mismatch"));
     }
   } else if (clientHwid) {
+    // First-time bind: lock this key to the HWID that used it first
     const allKeys = readKeys();
     const idx = allKeys.findIndex((k) => k.key === keyData.key);
     if (idx !== -1) {
@@ -819,24 +847,31 @@ async function copyLoader() {
       writeKeys(allKeys);
     }
     keyData.hwid = clientHwid;
+  } else {
+    // Key requires HWID binding but loader didn't send one (old loader, or stripped) -> KICK
+    return res
+      .status(200)
+      .type("text/plain")
+      .set("Cache-Control", "no-store")
+      .send(kickLua("Missing HWID"));
   }
 
   if (!script.enabled) {
     return res
-      .status(403)
+      .status(200)
       .type("text/plain")
       .set("Cache-Control", "no-store")
-      .send("-- SpideyProtect: Script disabled");
+      .send(kickLua("Script disabled"));
   }
 
   const filepath = path.join(SCRIPTS_DIR, script.filename);
 
   if (!fs.existsSync(filepath)) {
     return res
-      .status(404)
+      .status(200)
       .type("text/plain")
       .set("Cache-Control", "no-store")
-      .send("-- SpideyProtect: Source missing");
+      .send(kickLua("Source missing"));
   }
 
   const source = fs.readFileSync(filepath, "utf8");
@@ -866,7 +901,8 @@ app.get("/api/freemode/:guildId/:scriptId", (req, res) => {
 
 // ==================== FILES LOADER - REDIRECT KE API LOADER ====================
 app.get("/files/loaders/:id.lua", (req, res) => {
-  res.redirect(`/api/loader/${req.params.id}.lua`);
+  const qs = req.originalUrl.includes("?") ? req.originalUrl.split("?")[1] : "";
+  res.redirect(`/api/loader/${req.params.id}.lua${qs ? "?" + qs : ""}`);
 });
 
 // ==================== ADMIN API ====================
@@ -1333,7 +1369,10 @@ app.get("/", requireAuth, (req, res) => {
     .map((script) => {
       const base = getBaseUrl(req);
       const loaderPage = `${base}/files/loaders/${script.id}.lua`;
-      const loaderCodeDisplay = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua"))()`;
+      const loaderCodeDisplay =
+        `local key = "YOUR_KEY_HERE"\n` +
+        `local hwid = game:GetService("RbxAnalyticsService"):GetClientId()\n` +
+        `loadstring(game:HttpGet("${base}/api/loader/${script.id}.lua?key="..key.."&hwid="..hwid))()`;
 
       return `
 <div class="script-card">
