@@ -320,7 +320,8 @@ client.on("interactionCreate", async interaction => {
           const isFreeMode = cfg.freeMode && cfg.freeMode[scriptId] === true;
 
           if (isFreeMode) {
-            const loaderCode = `loadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${scriptId}.lua"))()`;
+            // FIXED: Free mode loader langsung ke /api/loader tanpa key
+            const loaderCode = `loadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${scriptId}.lua?freemode=1"))()`;
             return interaction.editReply({ 
               content: `📜 **FREE MODE ENABLED**\nNo key required!\n\`\`\`lua\n${loaderCode}\n\`\`\`` 
             }).catch(() => {});
@@ -339,7 +340,8 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ You don't have a key for this script!" }).catch(() => {});
           }
 
-          const loaderCode = `script_key="${validKey.key}";\nloadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${validKey.scriptId}.lua"))()`;
+          // FIXED: Loader dengan key sebagai query parameter
+          const loaderCode = `script_key="${validKey.key}"\nloadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${validKey.scriptId}.lua?key="..script_key))()`;
           return interaction.editReply({ content: `📜 Your loader:\n\`\`\`lua\n${loaderCode}\n\`\`\`` }).catch(() => {});
         } catch (err) {
           console.error("Get script error:", err);
