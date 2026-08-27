@@ -564,7 +564,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
 
   // Jika tidak ada key, tampilkan halaman web keren dengan loader
   if (!key) {
-    // FORMAT LOADER SEPERTI YANG DIMINTA
+    // FORMAT LOADER DENGAN BARIS BARU YANG SEBENARNYA (bukan \n)
     let loaderCode;
     if (isFreeMode) {
       loaderCode = `loadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua?freemode=true"))()`;
@@ -572,6 +572,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
       loaderCode = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()`;
     }
 
+    // TAMPILAN HTML DENGAN LOADER YANG BISA DI-RUN
     return res.status(200).send(`<!DOCTYPE html>
 <html lang="en">
 <head>
