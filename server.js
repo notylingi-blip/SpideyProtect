@@ -86,6 +86,10 @@ function readBotConfig() {
   }
 }
 
+function writeBotConfig(data) {
+  fs.writeFileSync(BOT_CONFIG_FILE, JSON.stringify(data, null, 2));
+}
+
 // ==================== ID GENERATOR ====================
 // 14 karakter hex (7 bytes)
 function generateId() {
@@ -534,9 +538,44 @@ app.get("/api/execute/:id", (req, res) => {
     .send(source);
 });
 
+// ==================== LOADER ENDPOINT - DIPERBAIKI ====================
 app.get("/api/loader/:id.lua", (req, res) => {
   const scriptId = req.params.id;
   const key = req.query.key || req.headers["x-script-key"];
+
+  // CEK FREEMODE TERLEBIH DAHULU
+  const db = readDB();
+  const script = db.find((x) => x.id === scriptId);
+  
+  if (!script) {
+    return res
+      .status(404)
+      .type("text/plain")
+      .set("Cache-Control", "no-store")
+      .send("-- SpideyProtect: Script not found");
+  }
+
+  // CEK FREEMODE DARI BOT CONFIG
+  const botConfig = readBotConfig();
+  const isFreeMode = botConfig[script.guildId]?.freeMode?.[scriptId] === true;
+
+  // JIKA FREEMODE ENABLED, LANGSUNG KEMBALIKAN SOURCE TANPA KEY
+  if (isFreeMode) {
+    const filepath = path.join(SCRIPTS_DIR, script.filename);
+    if (!fs.existsSync(filepath)) {
+      return res
+        .status(404)
+        .type("text/plain")
+        .set("Cache-Control", "no-store")
+        .send("-- SpideyProtect: Source missing");
+    }
+    const source = fs.readFileSync(filepath, "utf8");
+    return res
+      .status(200)
+      .type("text/plain")
+      .set("Cache-Control", "no-store")
+      .send(source);
+  }
 
   // Jika tidak ada key, return loader yang meminta key
   if (!key) {
@@ -560,6 +599,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
     return res
       .status(403)
       .type("text/plain")
+      .set("Cache-Control", "no-store")
       .send("-- SpideyProtect: Invalid key");
   }
 
@@ -567,6 +607,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
     return res
       .status(403)
       .type("text/plain")
+      .set("Cache-Control", "no-store")
       .send("-- SpideyProtect: Key expired");
   }
 
@@ -574,6 +615,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
     return res
       .status(403)
       .type("text/plain")
+      .set("Cache-Control", "no-store")
       .send("-- SpideyProtect: Key not valid for this script");
   }
 
@@ -598,20 +640,12 @@ app.get("/api/loader/:id.lua", (req, res) => {
     keyData.hwid = clientHwid;
   }
 
-  const db = readDB();
-  const script = db.find((x) => x.id === scriptId);
-
-  if (!script) {
-    return res
-      .status(404)
-      .type("text/plain")
-      .send("-- SpideyProtect: Script not found");
-  }
-
+  // SCRIPT SUDAH DIAMBIL DI ATAS
   if (!script.enabled) {
     return res
       .status(403)
       .type("text/plain")
+      .set("Cache-Control", "no-store")
       .send("-- SpideyProtect: Script disabled");
   }
 
@@ -621,6 +655,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
     return res
       .status(404)
       .type("text/plain")
+      .set("Cache-Control", "no-store")
       .send("-- SpideyProtect: Source missing");
   }
 
@@ -633,6 +668,23 @@ app.get("/api/loader/:id.lua", (req, res) => {
     .send(source);
 });
 
+// ==================== API FREEMODE UNTUK BOT ====================
+app.get("/api/freemode/:guildId/:scriptId", (req, res) => {
+  const secret = req.headers["x-api-secret"];
+  
+  if (secret !== API_SECRET) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const { guildId, scriptId } = req.params;
+  const botConfig = readBotConfig();
+  
+  const isFreeMode = botConfig[guildId]?.freeMode?.[scriptId] === true;
+  
+  res.json({ freeMode: isFreeMode });
+});
+
+// ==================== FILES LOADER ====================
 app.get("/files/loaders/:id.lua", (req, res) => {
   const db = readDB();
   const script = db.find((x) => x.id === req.params.id);
