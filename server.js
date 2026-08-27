@@ -90,7 +90,6 @@ function writeBotConfig(data) {
   fs.writeFileSync(BOT_CONFIG_FILE, JSON.stringify(data, null, 2));
 }
 
-// ==================== ID GENERATOR ====================
 function generateId() {
   return crypto.randomBytes(7).toString("hex");
 }
@@ -400,7 +399,7 @@ app.post("/api/scripts", requireAuth, (req, res) => {
   writeDB(db);
 
   const base = getBaseUrl(req);
-  const loaderPage = `${base}/api/loader/${id}.lua`; // LANGSUNG KE API LOADER
+  const loaderPage = `${base}/api/loader/${id}.lua`;
   const executeLoader = `${base}/api/execute/${id}`;
 
   res.json({
@@ -537,7 +536,7 @@ app.get("/api/execute/:id", (req, res) => {
     .send(source);
 });
 
-// ==================== LOADER ENDPOINT - FIXED ====================
+// ==================== LOADER ENDPOINT - WITH KICK ====================
 app.get("/api/loader/:id.lua", (req, res) => {
   const scriptId = req.params.id;
   const db = readDB();
@@ -551,53 +550,61 @@ app.get("/api/loader/:id.lua", (req, res) => {
   const isFreeMode = botConfig[script.guildId]?.freeMode?.[scriptId] === true;
   const base = getBaseUrl(req);
 
-  // ===== FREEMODE REQUEST =====
-  if (req.query.freemode === "1" || req.query.freemode === "true") {
-    if (!isFreeMode) {
-      return res.status(403).type("text/plain").set("Cache-Control", "no-store")
-        .send("-- SpideyProtect: Free mode not enabled");
-    }
-    if (!script.enabled) {
-      return res.status(403).type("text/plain").set("Cache-Control", "no-store")
-        .send("-- SpideyProtect: Script disabled");
-    }
-    const fp = path.join(SCRIPTS_DIR, script.filename);
-    if (!fs.existsSync(fp)) {
-      return res.status(404).type("text/plain").set("Cache-Control", "no-store")
-        .send("-- SpideyProtect: Source missing");
-    }
-    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-      .send(fs.readFileSync(fp, "utf8"));
-  }
-
-  // ===== KEY REQUEST =====
+  // CEK KEY DARI QUERY ATAU HEADER
   const key = req.query.key || req.headers["x-script-key"];
 
+  // CEK APAKAH INI REQUEST DARI ROBLOX EXECUTOR
+  const isRobloxRequest = req.headers["user-agent"] && 
+    (req.headers["user-agent"].includes("Roblox") || 
+     req.headers["user-agent"].includes("Lua") ||
+     req.query.hwid);
+
+  // FUNCTION UNTUK KICK
+  function kickPlayer(reason) {
+    return `
+local plr = game:GetService("Players").LocalPlayer
+if plr then
+    plr:Kick("${reason}")
+end
+    `;
+  }
+
+  // JIKA TIDAK ADA KEY DAN BUKAN FREEMODE → KICK
+  if (!key && !req.query.freemode && isRobloxRequest) {
+    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+      .send(kickPlayer("No Key Provided"));
+  }
+
+  // JIKA ADA KEY → PROSES SEBAGAI EXECUTOR REQUEST
   if (key) {
     const keys = readKeys();
     const keyData = keys.find((k) => k.key === key.toLowerCase().trim());
 
+    // KEY TIDAK VALID → KICK
     if (!keyData) {
-      return res.status(403).type("text/plain").set("Cache-Control", "no-store")
-        .send("-- SpideyProtect: Invalid key");
+      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Invalid Key"));
     }
 
+    // KEY EXPIRED → KICK
     if (keyData.expiry && new Date(keyData.expiry) < new Date()) {
-      return res.status(403).type("text/plain").set("Cache-Control", "no-store")
-        .send("-- SpideyProtect: Key expired");
+      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Key Expired"));
     }
 
+    // KEY TIDAK VALID UNTUK SCRIPT INI → KICK
     if (keyData.scriptId && keyData.scriptId !== scriptId) {
-      return res.status(403).type("text/plain").set("Cache-Control", "no-store")
-        .send("-- SpideyProtect: Key not valid for this script");
+      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Key Not Valid For This Script"));
     }
 
     // HWID check
     const clientHwid = req.query.hwid ? String(req.query.hwid).trim() : null;
     if (keyData.hwid) {
       if (!clientHwid || clientHwid !== keyData.hwid) {
+        // HWID MISMATCH → KICK
         return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-          .send('local plr = game:GetService("Players").LocalPlayer\nif plr then\n    plr:Kick("\\nHWID Mismatch\\n")\nend');
+          .send(kickPlayer("HWID Mismatch"));
       }
     } else if (clientHwid) {
       const allKeys = readKeys();
@@ -609,15 +616,35 @@ app.get("/api/loader/:id.lua", (req, res) => {
       keyData.hwid = clientHwid;
     }
 
+    // SCRIPT DISABLED → KICK
     if (!script.enabled) {
-      return res.status(403).type("text/plain").set("Cache-Control", "no-store")
-        .send("-- SpideyProtect: Script disabled");
+      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Script Disabled"));
     }
 
     const fp = path.join(SCRIPTS_DIR, script.filename);
     if (!fs.existsSync(fp)) {
       return res.status(404).type("text/plain").set("Cache-Control", "no-store")
-        .send("-- SpideyProtect: Source missing");
+        .send(kickPlayer("Source Missing"));
+    }
+    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+      .send(fs.readFileSync(fp, "utf8"));
+  }
+
+  // CEK FREEMODE REQUEST
+  if (req.query.freemode === "1" || req.query.freemode === "true") {
+    if (!isFreeMode) {
+      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Free Mode Not Enabled"));
+    }
+    if (!script.enabled) {
+      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Script Disabled"));
+    }
+    const fp = path.join(SCRIPTS_DIR, script.filename);
+    if (!fs.existsSync(fp)) {
+      return res.status(404).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Source Missing"));
     }
     return res.status(200).type("text/plain").set("Cache-Control", "no-store")
       .send(fs.readFileSync(fp, "utf8"));
@@ -628,7 +655,7 @@ app.get("/api/loader/:id.lua", (req, res) => {
   if (isFreeMode) {
     loaderCode = `loadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua?freemode=1"))()`;
   } else {
-    loaderCode = `script_key="YOUR_KEY_HERE"\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua?key="..script_key))()`;
+    loaderCode = `script_key="YOUR_KEY_HERE"\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()`;
   }
 
   return res.status(200).send(`<!DOCTYPE html>
@@ -784,7 +811,7 @@ h1 { font-size: 24px; font-weight: 850; color: #fff; margin-bottom: 4px; }
   <button class="copy-btn" onclick="copyLoader()">📋 Copy Loader</button>
   <div class="security-note">
     🔒 <strong>Source Protected</strong> — The original source is never displayed here.<br>
-    ${isFreeMode ? '🆓 <strong>Free Mode Active</strong> — No key required!' : '🔑 <strong>Key Required</strong> — Use a valid key to access the script.'}
+    ${isFreeMode ? '🆓 <strong>Free Mode Active</strong> — No key required!' : '🔑 <strong>Key Required</strong> — Replace YOUR_KEY_HERE with a valid key.'}
   </div>
   <div class="footer-text">Protected by <strong>SpideyProtect</strong> 🕷️</div>
 </div>
@@ -813,7 +840,6 @@ async function copyLoader() {
 });
 
 // ==================== FILES LOADER - REDIRECT KE API LOADER ====================
-// Endpoint ini tetap untuk kompatibilitas, redirect ke /api/loader
 app.get("/files/loaders/:id.lua", (req, res) => {
   res.redirect(`/api/loader/${req.params.id}.lua`);
 });
@@ -1297,8 +1323,8 @@ app.get("/", requireAuth, (req, res) => {
     .filter((script) => script.ownerId === userId)
     .map((script) => {
       const base = getBaseUrl(req);
-      const loaderPage = `${base}/api/loader/${script.id}.lua`; // LANGSUNG KE API LOADER
-      const loaderCodeDisplay = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua?key="..script_key))()`;
+      const loaderPage = `${base}/api/loader/${script.id}.lua`;
+      const loaderCodeDisplay = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua"))()`;
 
       return `
 <div class="script-card">
