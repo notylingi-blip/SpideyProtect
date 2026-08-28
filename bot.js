@@ -55,7 +55,7 @@ function isBlacklisted(userId) {
 
 function generateKey() {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length: 20 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  return Array.from({ length: 40 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
 function hasPermission(member, guildId) {
