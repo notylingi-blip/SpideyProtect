@@ -25,14 +25,17 @@ if (!fs.existsSync(BOT_CONFIG_FILE)) fs.writeFileSync(BOT_CONFIG_FILE, "{}", "ut
 if (!fs.existsSync(GUILDS_FILE)) fs.writeFileSync(GUILDS_FILE, "[]", "utf8");
 
 app.use(express.json({ limit: "15mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "spideyprotect-secret-key-ganti-ini",
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false, maxAge: 7 * 24 * 60 * 60 * 1000 },
+    cookie: {
+      secure: false,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    },
   })
 );
 
@@ -46,19 +49,15 @@ function writeDB(data) { fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2)
 function readKeys() { try { return JSON.parse(fs.readFileSync(KEYS_FILE, "utf8")); } catch { return []; } }
 function writeKeys(data) { fs.writeFileSync(KEYS_FILE, JSON.stringify(data, null, 2)); }
 function readBotConfig() { try { return JSON.parse(fs.readFileSync(BOT_CONFIG_FILE, "utf8")); } catch { return {}; } }
-function writeBotConfig(data) { fs.writeFileSync(BOT_CONFIG_FILE, JSON.stringify(data, null, 2)); }
-
 function generateId() { return crypto.randomBytes(7).toString("hex"); }
-
-function generateKey() {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length: 40 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-}
 
 function escapeHtml(value) {
   return String(value)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function getBaseUrl(req) {
@@ -72,30 +71,17 @@ function requireAuth(req, res, next) {
 }
 
 function isAdmin(req, res, next) {
-  if (!req.session || !req.session.user || req.session.user.id !== ADMIN_USER_ID)
+  if (!req.session || !req.session.user || req.session.user.id !== ADMIN_USER_ID) {
     return res.status(403).send("Forbidden");
+  }
   next();
 }
 
-// Escape string untuk dipakai dalam Lua string literal (single-quoted)
-function escapeLua(str) {
-  return String(str)
-    .replace(/\\/g, "\\\\")
-    .replace(/'/g, "\\'")
-    .replace(/\n/g, "\\n")
-    .replace(/\r/g, "\\r");
-}
-
-// Kick script yang valid untuk Roblox LocalScript
-function makeKickScript(reason) {
-  const safeReason = escapeLua(reason);
-  return `game:GetService("Players").LocalPlayer:Kick('${safeReason}')`;
-}
-
-// ==================== AUTH ====================
+// ==================== AUTH ROUTER ====================
 
 app.get("/login", (req, res) => {
   if (req.session && req.session.user) return res.redirect("/");
+
   res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -104,32 +90,32 @@ app.get("/login", (req, res) => {
 <title>SpideyProtect - Login</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { min-height: 100vh; font-family: Arial, Helvetica, sans-serif; color: white;
+body {
+  min-height: 100vh; font-family: Arial, sans-serif; color: white;
   background: radial-gradient(circle at 10% 0%, rgba(255,0,0,.28), transparent 30%),
-    radial-gradient(circle at 90% 100%, rgba(0,110,255,.22), transparent 35%), #050505;
-  display: flex; align-items: center; justify-content: center; }
-.card { width: 100%; max-width: 400px; padding: 40px 30px; border-radius: 20px;
-  border: 1px solid rgba(90,150,255,.18);
-  background: linear-gradient(145deg, rgba(8,31,57,.92), rgba(4,15,28,.95));
-  box-shadow: 0 25px 70px rgba(0,0,0,.4); text-align: center; }
-.logo { width: 70px; height: 70px; margin: 0 auto 16px; border-radius: 20px;
+              radial-gradient(circle at 90% 100%, rgba(0,110,255,.22), transparent 35%), #050505;
+  display: flex; align-items: center; justify-content: center;
+}
+.card {
+  width: 100%; max-width: 400px; padding: 40px 30px; border-radius: 20px;
+  border: 1px solid rgba(90,150,255,.18); background: linear-gradient(145deg, rgba(8,31,57,.92), rgba(4,15,28,.95));
+  box-shadow: 0 25px 70px rgba(0,0,0,.4); text-align: center;
+}
+.logo {
+  width: 70px; height: 70px; margin: 0 auto 16px; border-radius: 20px;
   display: flex; align-items: center; justify-content: center; font-size: 36px;
   background: linear-gradient(135deg, #ffffff, #dce9ff); color: #d40000;
-  box-shadow: 0 0 35px rgba(0,110,255,.25), 0 0 25px rgba(255,0,0,.18); }
+  box-shadow: 0 0 35px rgba(0,110,255,.25), 0 0 25px rgba(255,0,0,.18);
+}
 h1 { font-size: 26px; font-weight: 850; margin-bottom: 6px; }
 p { color: rgba(255,255,255,.55); font-size: 13px; margin-bottom: 30px; }
-.discord-btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px;
-  width: 100%; padding: 14px 20px; border: none; border-radius: 12px; background: #5865F2;
-  color: white; font-size: 15px; font-weight: 800; cursor: pointer; text-decoration: none;
-  transition: transform .2s, filter .2s; }
+.discord-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 14px 20px; border: none; border-radius: 12px;
+  background: #5865F2; color: white; font-size: 15px; font-weight: 800;
+  cursor: pointer; text-decoration: none; transition: transform .2s, filter .2s;
+}
 .discord-btn:hover { transform: translateY(-2px); filter: brightness(1.1); }
-.discord-btn svg { width: 22px; height: 22px; fill: white; }
-.invite-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  margin-top: 12px; width: 100%; padding: 12px 20px; border: 1px solid rgba(88,101,242,.4);
-  border-radius: 12px; background: rgba(88,101,242,.12); color: rgba(255,255,255,.75);
-  font-size: 13px; font-weight: 700; text-decoration: none; transition: background .2s, border-color .2s; }
-.invite-link:hover { background: rgba(88,101,242,.25); border-color: rgba(88,101,242,.7); color: white; }
-.invite-link svg { width: 16px; height: 16px; fill: currentColor; }
 </style>
 </head>
 <body>
@@ -137,14 +123,7 @@ p { color: rgba(255,255,255,.55); font-size: 13px; margin-bottom: 30px; }
   <div class="logo">🕷️</div>
   <h1>SpideyProtect</h1>
   <p>Login with Discord to protect your Lua scripts.</p>
-  <a class="discord-btn" href="/auth/discord">
-    <svg viewBox="0 0 24 24"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.056a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
-    Login with Discord
-  </a>
-  <a class="invite-link" href="https://discord.com/oauth2/authorize?client_id=1541101786855899177&permissions=2415937584&integration_type=0&scope=bot" target="_blank" rel="noopener">
-    <svg viewBox="0 0 24 24"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.056a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
-    Invite Bot to Discord Server
-  </a>
+  <a class="discord-btn" href="/auth/discord">Login with Discord</a>
 </div>
 </body>
 </html>`);
@@ -163,6 +142,7 @@ app.get("/auth/discord", (req, res) => {
 app.get("/auth/discord/callback", async (req, res) => {
   const { code } = req.query;
   if (!code) return res.redirect("/login");
+
   try {
     const tokenRes = await axios.post(
       "https://discord.com/api/oauth2/token",
@@ -175,10 +155,12 @@ app.get("/auth/discord/callback", async (req, res) => {
       }),
       { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
     );
+
     const { access_token } = tokenRes.data;
     const userRes = await axios.get("https://discord.com/api/users/@me", {
       headers: { Authorization: `Bearer ${access_token}` },
     });
+
     const discordUser = userRes.data;
     req.session.user = {
       id: discordUser.id,
@@ -187,6 +169,7 @@ app.get("/auth/discord/callback", async (req, res) => {
         ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
         : `https://cdn.discordapp.com/embed/avatars/0.png`,
     };
+
     res.redirect("/");
   } catch (err) {
     console.error("Discord OAuth error:", err?.response?.data || err.message);
@@ -198,46 +181,56 @@ app.get("/logout", (req, res) => {
   req.session.destroy(() => res.redirect("/login"));
 });
 
-// ==================== API ====================
+// ==================== API ENDPOINTS ====================
 
 app.get("/api/scripts", requireAuth, (req, res) => {
   const db = readDB();
+  const userId = req.session.user.id;
   res.json(
-    db.filter((s) => s.ownerId === req.session.user.id)
-      .map((s) => ({ id: s.id, name: s.name, enabled: s.enabled, createdAt: s.createdAt }))
+    db.filter((s) => s.ownerId === userId).map((s) => ({
+      id: s.id,
+      name: s.name,
+      enabled: s.enabled,
+      createdAt: s.createdAt,
+    }))
   );
 });
 
 app.get("/api/scripts/internal", (req, res) => {
   if (req.headers["x-api-secret"] !== API_SECRET) return res.status(403).json({ error: "Forbidden" });
   const db = readDB();
-  const filtered = req.query.ownerId ? db.filter((s) => s.ownerId === req.query.ownerId) : db;
-  res.json(filtered.map((s) => ({ id: s.id, name: s.name, enabled: s.enabled, ownerId: s.ownerId, ownerUsername: s.ownerUsername, guildId: s.guildId })));
-});
-
-app.get("/api/scripts/internal/guild/:guildId", (req, res) => {
-  if (req.headers["x-api-secret"] !== API_SECRET) return res.status(403).json({ error: "Forbidden" });
-  const db = readDB();
-  res.json(
-    db.filter((s) => s.guildId === req.params.guildId)
-      .map((s) => ({ id: s.id, name: s.name, enabled: s.enabled, ownerId: s.ownerId, ownerUsername: s.ownerUsername, guildId: s.guildId }))
-  );
+  const ownerId = req.query.ownerId;
+  const filtered = ownerId ? db.filter((s) => s.ownerId === ownerId) : db;
+  res.json(filtered.map((s) => ({
+    id: s.id,
+    name: s.name,
+    enabled: s.enabled,
+    ownerId: s.ownerId,
+    ownerUsername: s.ownerUsername,
+    guildId: s.guildId,
+  })));
 });
 
 app.post("/api/scripts", requireAuth, (req, res) => {
   const { name, source, guildId } = req.body;
-  if (!name || typeof name !== "string") return res.status(400).json({ error: "Script name is required" });
-  if (!source || typeof source !== "string") return res.status(400).json({ error: "Lua source is required" });
-  if (source.length > 10 * 1024 * 1024) return res.status(413).json({ error: "File too large. Maximum 10MB." });
+  if (!name || typeof name !== "string") return res.status(400).json({ error: "Script name required" });
+  if (!source || typeof source !== "string") return res.status(400).json({ error: "Lua source required" });
 
   const id = generateId();
   const filename = `${id}.lua`;
-  fs.writeFileSync(path.join(SCRIPTS_DIR, filename), source, "utf8");
+  const filepath = path.join(SCRIPTS_DIR, filename);
+
+  fs.writeFileSync(filepath, source, "utf8");
 
   const script = {
-    id, name: name.trim().slice(0, 100), filename, enabled: true,
-    ownerId: req.session.user.id, ownerUsername: req.session.user.username,
-    guildId: guildId || null, createdAt: new Date().toISOString(),
+    id,
+    name: name.trim().slice(0, 100),
+    filename,
+    enabled: true,
+    ownerId: req.session.user.id,
+    ownerUsername: req.session.user.username,
+    guildId: guildId || null,
+    createdAt: new Date().toISOString(),
   };
 
   const db = readDB();
@@ -258,6 +251,7 @@ app.post("/api/scripts/:id/toggle", requireAuth, (req, res) => {
   const script = db.find((x) => x.id === req.params.id);
   if (!script) return res.status(404).json({ error: "Script not found" });
   if (script.ownerId !== req.session.user.id) return res.status(403).json({ error: "Forbidden" });
+
   script.enabled = !script.enabled;
   writeDB(db);
   res.json({ success: true, enabled: script.enabled });
@@ -268,71 +262,73 @@ app.delete("/api/scripts/:id", requireAuth, (req, res) => {
   const index = db.findIndex((x) => x.id === req.params.id);
   if (index === -1) return res.status(404).json({ error: "Script not found" });
   if (db[index].ownerId !== req.session.user.id) return res.status(403).json({ error: "Forbidden" });
+
   const filepath = path.join(SCRIPTS_DIR, db[index].filename);
   if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
+
   db.splice(index, 1);
   writeDB(db);
   res.json({ success: true });
 });
 
-app.delete("/api/scripts/internal/:id", (req, res) => {
-  if (req.headers["x-api-secret"] !== API_SECRET) return res.status(403).json({ error: "Forbidden" });
-  const requestOwnerId = req.headers["x-owner-id"];
-  if (!requestOwnerId) return res.status(400).json({ error: "x-owner-id header required" });
-  const db = readDB();
-  const index = db.findIndex((x) => x.id === req.params.id);
-  if (index === -1) return res.status(404).json({ error: "Script not found" });
-  if (db[index].ownerId !== requestOwnerId) return res.status(403).json({ error: "You do not own this script" });
-  const filepath = path.join(SCRIPTS_DIR, db[index].filename);
-  if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
-  const name = db[index].name;
-  db.splice(index, 1);
-  writeDB(db);
-  res.json({ success: true, name });
-});
+// ==================== LOADER ENGINE (LUA FORMAT RECOVERY) ====================
 
-app.get("/api/execute/:id", (req, res) => {
-  const db = readDB();
-  const script = db.find((x) => x.id === req.params.id);
-  if (!script) return res.status(404).type("text/plain").send("-- SpideyProtect: Script not found");
-  if (!script.enabled) return res.status(403).type("text/plain").send("-- SpideyProtect: Script disabled");
-  const filepath = path.join(SCRIPTS_DIR, script.filename);
-  if (!fs.existsSync(filepath)) return res.status(404).type("text/plain").send("-- SpideyProtect: Source missing");
-  res.status(200).type("text/plain").set("Cache-Control", "no-store").send(fs.readFileSync(filepath, "utf8"));
-});
-
-// ==================== LOADER ENDPOINT (FIXED) ====================
-app.get("/api/loader/:id.lua", (req, res) => {
+app.all("/api/loader/:id.lua", (req, res) => {
   const scriptId = req.params.id;
   const db = readDB();
   const script = db.find((x) => x.id === scriptId);
 
-  if (!script) {
-    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-      .send(makeKickScript("[SpideyProtect] Script not found"));
+  function sendLuaKick(reason) {
+    return res.status(200).type("text/plain").set("Cache-Control", "no-store").send(`
+local plr = game:GetService("Players").LocalPlayer
+if plr then
+    plr:Kick("[SpideyProtect] ${reason}")
+end
+    `);
   }
+
+  if (!script) return sendLuaKick("Script Not Found");
+
+  const userAgent = req.headers["user-agent"] || "";
+  const isRoblox = userAgent.includes("Roblox") || userAgent.includes("Lua") || req.query.hwid || req.headers["roblox-id"];
+
+  let key = req.headers["x-script-key"] || req.query.key || (req.body && req.body.key);
 
   const botConfig = readBotConfig();
   const isFreeMode = botConfig[script.guildId]?.freeMode?.[scriptId] === true;
   const base = getBaseUrl(req);
 
-  // Ambil key dari query param ATAU header - lowercase untuk perbandingan
-  const rawKey = (req.query.key || req.headers["x-script-key"] || "").trim();
-  const isFreeRequest = rawKey.toUpperCase() === "FREE_MODE";
-  const key = isFreeRequest ? "" : rawKey.toLowerCase();
+  // 1. Apabila dipanggil Roblox tanpa parameter key -> Kirim Bootstrap Script yang membaca script_key
+  if (isRoblox && !key) {
+    const bootstrapCode = `
+local scriptKey = _G.script_key or script_key or "FREE_MODE"
+local hwid = game:GetService("RbxAnalyticsService"):GetClientId()
+local url = "${base}/api/loader/${scriptId}.lua?key=" .. tostring(scriptKey) .. "&hwid=" .. tostring(hwid)
 
-  // Deteksi apakah request dari Roblox executor (bukan browser biasa)
-  const ua = (req.headers["user-agent"] || "").toLowerCase();
-  const isRobloxRequest = ua.includes("roblox") || ua.includes("lua") || !!req.query.hwid || !!rawKey;
+local success, result = pcall(function()
+    return game:HttpGet(url)
+end)
 
-  // ===== KALAU BUKAN DARI EXECUTOR (ga ada key/hwid) → TAMPILKAN HALAMAN WEB =====
-  if (!isRobloxRequest) {
-    let loaderCode;
-    if (isFreeMode) {
-      loaderCode = `loadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua?key=FREE_MODE"))()`;
-    } else {
-      loaderCode = `loadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua?key=YOUR_KEY_HERE"))()`;
-    }
+if success then
+    local func, err = loadstring(result)
+    if func then
+        func()
+    else
+        error("[SpideyProtect Error]: " .. tostring(err))
+    end
+else
+    error("[SpideyProtect Error]: Failed to reach server")
+end
+    `.trim();
+
+    return res.status(200).type("text/plain").set("Cache-Control", "no-store").send(bootstrapCode);
+  }
+
+  // 2. Apabila dipanggil via Browser -> Tampilkan Website Loader Format script_key
+  if (!isRoblox && !key) {
+    const loaderCode = isFreeMode 
+      ? `loadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()` 
+      : `script_key = "YOUR_KEY_HERE"\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()`;
 
     return res.status(200).send(`<!DOCTYPE html>
 <html lang="en">
@@ -342,172 +338,84 @@ app.get("/api/loader/:id.lua", (req, res) => {
 <title>SpideyProtect • ${escapeHtml(script.name)}</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { min-height: 100vh; font-family: 'Segoe UI', Arial, sans-serif;
-  background: radial-gradient(circle at 10% 0%, rgba(255,0,0,0.25), transparent 35%),
-    radial-gradient(circle at 90% 100%, rgba(0,110,255,0.20), transparent 35%), #050505;
-  display: flex; align-items: center; justify-content: center; padding: 20px; }
-.card { max-width: 650px; width: 100%; padding: 35px 30px; border-radius: 20px;
-  border: 1px solid rgba(90,150,255,0.18);
-  background: linear-gradient(145deg, rgba(8,31,57,0.92), rgba(4,15,28,0.95));
-  box-shadow: 0 25px 70px rgba(0,0,0,0.6); text-align: center; }
-.logo { width: 60px; height: 60px; margin: 0 auto 14px; border-radius: 18px;
-  display: flex; align-items: center; justify-content: center; font-size: 32px;
-  background: linear-gradient(135deg, #ffffff, #dce9ff); color: #d40000;
-  box-shadow: 0 0 35px rgba(0,110,255,0.25), 0 0 25px rgba(255,0,0,0.18); }
-h1 { font-size: 24px; font-weight: 850; color: #fff; margin-bottom: 4px; }
-.subtitle { color: rgba(255,255,255,0.5); font-size: 12px; margin-bottom: 20px; }
-.protected-badge { display: inline-block; background: linear-gradient(90deg, #d40000, #006eff);
-  padding: 4px 16px; border-radius: 20px; font-size: 11px; font-weight: 800; color: white;
-  letter-spacing: 1px; margin-bottom: 18px; }
-.script-name { color: rgba(255,255,255,0.7); font-size: 13px; margin-bottom: 18px; }
-.script-name span { color: #ff4242; font-weight: 700; }
-.free-badge { display: inline-block; background: #00c853; color: white; padding: 2px 12px;
-  border-radius: 12px; font-size: 11px; font-weight: 800; margin-left: 6px; }
-.loader-label { text-align: left; font-size: 11px; font-weight: 800; letter-spacing: 1px;
-  color: rgba(255,255,255,0.4); margin-bottom: 6px; text-transform: uppercase; }
-.code-block { width: 100%; background: #02060c; border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.08); padding: 16px 18px; overflow-x: auto;
-  text-align: left; box-shadow: inset 0 0 30px rgba(0,0,0,0.4); }
-.code-block code { font-family: 'Courier New', monospace; font-size: 13px; color: #e7edf7;
-  white-space: pre-wrap; word-break: break-all; display: block; }
-.copy-btn { width: 100%; margin-top: 12px; padding: 13px; border: none; border-radius: 11px;
-  cursor: pointer; font-size: 14px; font-weight: 800; color: white;
-  background: linear-gradient(90deg, #d40000, #006eff); transition: transform 0.2s, filter 0.2s; }
-.copy-btn:hover { transform: translateY(-2px); filter: brightness(1.08); }
-.footer-text { margin-top: 16px; font-size: 11px; color: rgba(255,255,255,0.25); }
-.footer-text strong { color: #006eff; }
-.security-note { margin-top: 14px; padding: 12px; border-radius: 10px;
-  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
-  font-size: 12px; color: rgba(255,255,255,0.4); line-height: 1.6; }
-.security-note strong { color: #fff; }
+body {
+  min-height: 100vh; font-family: 'Segoe UI', Arial, sans-serif;
+  background: #050505; color: white; display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.card {
+  max-width: 600px; width: 100%; padding: 30px; border-radius: 16px;
+  background: #0d0d0d; border: 1px solid rgba(255,255,255,0.1); text-align: center;
+}
+.code-block {
+  background: #000; border: 1px solid #222; border-radius: 8px; padding: 15px; margin: 15px 0; text-align: left;
+}
+code { font-family: monospace; color: #00ff88; word-break: break-all; }
+button {
+  width: 100%; padding: 12px; background: #e00000; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;
+}
 </style>
 </head>
 <body>
 <div class="card">
-  <div class="logo">🕷️</div>
-  <h1>SpideyProtect</h1>
-  <div class="subtitle">Lua Protection System</div>
-  <div class="protected-badge">🔒 SOURCE PROTECTED</div>
-  <div class="script-name">
-    SCRIPT: <span>${escapeHtml(script.name)}</span>
-    ${isFreeMode ? '<span class="free-badge">FREE MODE</span>' : ''}
+  <h1>🕷️ SpideyProtect</h1>
+  <p>Script: <strong>${escapeHtml(script.name)}</strong></p>
+  <div class="code-block">
+    <code>${escapeHtml(loaderCode)}</code>
   </div>
-  <div class="loader-label">📜 LOADER</div>
-  <div class="code-block"><code id="loaderCode">${escapeHtml(loaderCode)}</code></div>
-  <button class="copy-btn" onclick="copyLoader()">📋 Copy Loader</button>
-  <div class="security-note">
-    🔒 <strong>Source Protected</strong> — The original source is never displayed here.<br>
-    ${isFreeMode
-      ? '🆓 <strong>Free Mode Active</strong> — No key required!'
-      : '🔑 <strong>Key Required</strong> — Ganti YOUR_KEY_HERE dengan key yang valid.'}
-  </div>
-  <div class="footer-text">Protected by <strong>SpideyProtect</strong> 🕷️</div>
+  <button onclick="navigator.clipboard.writeText('${escapeHtml(loaderCode)}')">📋 Copy Loader</button>
 </div>
-<script>
-const loader = ${JSON.stringify(loaderCode)};
-async function copyLoader() {
-  const btn = document.querySelector(".copy-btn");
-  try {
-    await navigator.clipboard.writeText(loader);
-    btn.textContent = "✅ Copied!";
-  } catch {
-    const ta = document.createElement("textarea");
-    ta.value = loader;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    ta.remove();
-    btn.textContent = "✅ Copied!";
-  }
-  setTimeout(() => { btn.textContent = "📋 Copy Loader"; }, 1800);
-}
-</script>
 </body>
 </html>`);
   }
 
-  // ===== DARI EXECUTOR =====
+  // 3. Verifikasi Eksekusi (Free Mode / Key Validation)
+  let isFreeModeRequest = (key && key.toUpperCase() === "FREE_MODE");
 
-  // --------- FREE MODE REQUEST ---------
-  if (isFreeRequest) {
-    if (!isFreeMode) {
-      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-        .send(makeKickScript("[SpideyProtect] Free Mode is not enabled for this script"));
-    }
-    if (!script.enabled) {
-      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-        .send(makeKickScript("[SpideyProtect] Script has been disabled by the owner"));
-    }
+  if (isFreeModeRequest || isFreeMode) {
+    if (!isFreeMode && !isFreeModeRequest) return sendLuaKick("Free Mode Not Enabled");
+    if (!script.enabled) return sendLuaKick("Script Disabled");
+
     const fp = path.join(SCRIPTS_DIR, script.filename);
-    if (!fs.existsSync(fp)) {
-      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-        .send(makeKickScript("[SpideyProtect] Source file is missing"));
-    }
-    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-      .send(fs.readFileSync(fp, "utf8"));
+    if (!fs.existsSync(fp)) return sendLuaKick("Source Missing");
+    
+    return res.status(200).type("text/plain").set("Cache-Control", "no-store").send(fs.readFileSync(fp, "utf8"));
   }
 
-  // --------- KEY AUTH ---------
-  if (!key) {
-    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-      .send(makeKickScript("[SpideyProtect] Key is required to use this script"));
-  }
-
+  // 4. Validasi Key & HWID
   const keys = readKeys();
-  const keyData = keys.find((k) => k.key.toLowerCase() === key);
+  const keyData = keys.find((k) => k.key.toLowerCase().trim() === key.toLowerCase().trim());
 
-  if (!keyData) {
-    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-      .send(makeKickScript("[SpideyProtect] Invalid key"));
-  }
+  if (!keyData) return sendLuaKick("Invalid Key");
+  if (keyData.expiry && new Date(keyData.expiry) < new Date()) return sendLuaKick("Key Expired");
+  if (keyData.scriptId && keyData.scriptId !== scriptId) return sendLuaKick("Key Not Valid For This Script");
 
-  if (keyData.expiry && new Date(keyData.expiry) < new Date()) {
-    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-      .send(makeKickScript("[SpideyProtect] Your key has expired"));
-  }
-
-  if (keyData.scriptId && keyData.scriptId !== scriptId) {
-    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-      .send(makeKickScript("[SpideyProtect] This key is not valid for this script"));
-  }
-
-  // HWID check
   const clientHwid = req.query.hwid ? String(req.query.hwid).trim() : null;
   if (keyData.hwid) {
-    if (!clientHwid || clientHwid !== keyData.hwid) {
-      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-        .send(makeKickScript("[SpideyProtect] HWID mismatch - device not recognized"));
-    }
+    if (clientHwid && clientHwid !== keyData.hwid) return sendLuaKick("HWID Mismatch");
   } else if (clientHwid) {
+    keyData.hwid = clientHwid;
     const allKeys = readKeys();
-    const idx = allKeys.findIndex((k) => k.key.toLowerCase() === key);
+    const idx = allKeys.findIndex((k) => k.key === keyData.key);
     if (idx !== -1) {
       allKeys[idx].hwid = clientHwid;
       writeKeys(allKeys);
     }
   }
 
-  if (!script.enabled) {
-    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-      .send(makeKickScript("[SpideyProtect] Script has been disabled by the owner"));
-  }
+  if (!script.enabled) return sendLuaKick("Script Disabled");
 
   const fp = path.join(SCRIPTS_DIR, script.filename);
-  if (!fs.existsSync(fp)) {
-    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-      .send(makeKickScript("[SpideyProtect] Source file is missing"));
-  }
+  if (!fs.existsSync(fp)) return sendLuaKick("Source Missing");
 
-  return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-    .send(fs.readFileSync(fp, "utf8"));
+  return res.status(200).type("text/plain").set("Cache-Control", "no-store").send(fs.readFileSync(fp, "utf8"));
 });
 
-// ==================== FILES LOADER REDIRECT ====================
 app.get("/files/loaders/:id.lua", (req, res) => {
   res.redirect(`/api/loader/${req.params.id}.lua`);
 });
 
-// ==================== API FREEMODE ====================
+// ==================== ADMIN & BOT ROUTER ====================
+
 app.get("/api/freemode/:guildId/:scriptId", (req, res) => {
   if (req.headers["x-api-secret"] !== API_SECRET) return res.status(403).json({ error: "Forbidden" });
   const { guildId, scriptId } = req.params;
@@ -515,184 +423,40 @@ app.get("/api/freemode/:guildId/:scriptId", (req, res) => {
   res.json({ freeMode: botConfig[guildId]?.freeMode?.[scriptId] === true });
 });
 
-// ==================== ADMIN API ====================
+app.post("/api/admin/guilds/update", (req, res) => {
+  if (req.headers["x-api-secret"] !== API_SECRET) return res.status(403).json({ error: "Forbidden" });
+  fs.writeFileSync(GUILDS_FILE, JSON.stringify(req.body.guilds || [], null, 2));
+  res.json({ success: true });
+});
+
 app.get("/api/admin/guilds", isAdmin, (req, res) => {
   try { res.json(JSON.parse(fs.readFileSync(GUILDS_FILE, "utf8"))); } catch { res.json([]); }
 });
 
-app.post("/api/admin/guilds/update", (req, res) => {
-  if (req.headers["x-api-secret"] !== API_SECRET) return res.status(403).json({ error: "Forbidden" });
-  const { guilds } = req.body;
-  if (!guilds || !Array.isArray(guilds)) return res.status(400).json({ error: "Invalid guilds data" });
-  fs.writeFileSync(GUILDS_FILE, JSON.stringify(guilds, null, 2));
-  res.json({ success: true });
-});
-
 app.get("/api/admin/scripts", isAdmin, (req, res) => {
   const db = readDB();
-  res.json(db.map((s) => {
-    const fp = path.join(SCRIPTS_DIR, s.filename);
-    return { ...s, source: fs.existsSync(fp) ? fs.readFileSync(fp, "utf8") : null };
-  }));
+  const scriptsWithSource = db.map((script) => {
+    const filepath = path.join(SCRIPTS_DIR, script.filename);
+    const source = fs.existsSync(filepath) ? fs.readFileSync(filepath, "utf8") : null;
+    return { ...script, source };
+  });
+  res.json(scriptsWithSource);
 });
 
-// ==================== ADMIN PAGES ====================
-app.get("/admin/dashboard", isAdmin, (req, res) => {
-  const db = readDB();
-  const keys = readKeys();
-  res.send(`<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><title>Admin Dashboard</title>
-<style>* { box-sizing:border-box; margin:0; padding:0; } body { min-height:100vh; font-family:Arial,sans-serif; background:#050505; color:white; display:flex; align-items:center; justify-content:center; }
-.card { max-width:600px; width:100%; padding:40px; border-radius:20px; border:1px solid rgba(90,150,255,.18); background:linear-gradient(145deg,rgba(8,31,57,.92),rgba(4,15,28,.95)); box-shadow:0 25px 70px rgba(0,0,0,.4); }
-h1 { margin-bottom:20px; text-align:center; } .stat { display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(255,255,255,.08); }
-.stat:last-child { border-bottom:none; } .label { color:rgba(255,255,255,.55); } .value { font-weight:bold; }
-.back { display:inline-block; margin-top:25px; padding:10px 20px; border-radius:8px; background:#5865F2; color:white; text-decoration:none; font-weight:bold; }</style></head>
-<body><div class="card">
-  <h1>📊 Admin Dashboard</h1>
-  <div class="stat"><span class="label">Total Scripts</span><span class="value">${db.length}</span></div>
-  <div class="stat"><span class="label">Total Users</span><span class="value">${new Set(db.map((s) => s.ownerId)).size}</span></div>
-  <div class="stat"><span class="label">Total Keys</span><span class="value">${keys.length}</span></div>
-  <div class="stat"><span class="label">Enabled Scripts</span><span class="value">${db.filter((s) => s.enabled).length}</span></div>
-  <div style="text-align:center;"><a class="back" href="/">⬅ Back to Dashboard</a></div>
-</div></body></html>`);
-});
+// ==================== DASHBOARD PAGE ====================
 
-app.get("/admin/source", isAdmin, (req, res) => {
-  res.send(`<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Source Scripts - Admin</title>
-<style>* { box-sizing:border-box; margin:0; padding:0; } body { min-height:100vh; font-family:Arial,sans-serif; background:#050505; color:white; padding:20px; }
-.container { max-width:1200px; margin:0 auto; } h1 { margin-bottom:20px; }
-table { width:100%; border-collapse:collapse; background:rgba(255,255,255,.04); border-radius:12px; overflow:hidden; }
-th,td { padding:12px 15px; text-align:left; border-bottom:1px solid rgba(255,255,255,.08); }
-th { background:rgba(255,255,255,.08); color:#aaa; font-size:13px; text-transform:uppercase; }
-.status { font-size:12px; padding:4px 8px; border-radius:12px; }
-.status.enabled { background:#1a5a2a; color:#88ff88; } .status.disabled { background:#5a1a1a; color:#ff8888; }
-.actions button { padding:6px 12px; border:none; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; margin-right:4px; }
-.btn-view { background:#5865F2; color:white; } .btn-copy { background:#2b7a3a; color:white; } .btn-download { background:#a9701a; color:white; }
-.modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,.85); align-items:center; justify-content:center; z-index:999; }
-.modal-content { max-width:900px; width:92%; max-height:85vh; background:#111; border-radius:16px; padding:25px; overflow-y:auto; border:1px solid rgba(255,255,255,.1); }
-.modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; gap:10px; }
-.modal-header h2 { margin:0; } .modal-actions { display:flex; gap:8px; }
-.modal-actions button { padding:8px 16px; border:none; border-radius:6px; cursor:pointer; font-weight:bold; }
-.btn-close { background:#444; color:white; } .btn-copy-source { background:#2b7a3a; color:white; } .btn-download-source { background:#a9701a; color:white; }
-.modal-content pre { background:#0a0a0a; padding:16px; border-radius:8px; overflow-x:auto; font-size:13px; white-space:pre-wrap; word-wrap:break-word; max-height:60vh; overflow-y:auto; }
-.back { display:inline-block; margin:20px 0; padding:8px 16px; background:#5865F2; color:white; text-decoration:none; border-radius:6px; }
-.search-box { padding:10px 16px; border-radius:8px; border:1px solid rgba(255,255,255,.12); background:#101010; color:white; width:250px; font-size:14px; }
-</style></head>
-<body><div class="container">
-  <h1>📄 Source Scripts (Admin)</h1>
-  <input class="search-box" id="searchInput" placeholder="🔍 Search..." oninput="filterScripts()">
-  <a class="back" href="/">⬅ Back</a>
-  <div id="scriptsContainer"><p>Loading...</p></div>
-</div>
-<div class="modal" id="sourceModal">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h2 id="modalScriptName">Script</h2>
-      <div class="modal-actions">
-        <button class="btn-copy-source" onclick="copySource()">📋 Copy</button>
-        <button class="btn-download-source" onclick="downloadSource()">⬇ Download</button>
-        <button class="btn-close" onclick="closeModal()">✕ Close</button>
-      </div>
-    </div>
-    <p><small>Owner: <span id="modalOwner"></span> | ID: <span id="modalScriptId"></span></small></p>
-    <pre id="modalSource"></pre>
-  </div>
-</div>
-<script>
-let allScripts = [], currentScript = null;
-async function loadScripts() {
-  const r = await fetch('/api/admin/scripts');
-  allScripts = await r.json();
-  renderScripts(allScripts);
-}
-function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function renderScripts(data) {
-  const c = document.getElementById('scriptsContainer');
-  if (!data.length) { c.innerHTML = '<p>No scripts.</p>'; return; }
-  c.innerHTML = '<table><thead><tr><th>Name</th><th>Owner</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody>' +
-    data.map(s => \`<tr>
-      <td>\${esc(s.name)}</td><td>\${esc(s.ownerUsername||s.ownerId)}</td>
-      <td><span class="status \${s.enabled?'enabled':'disabled'}">\${s.enabled?'Enabled':'Disabled'}</span></td>
-      <td>\${s.createdAt?new Date(s.createdAt).toLocaleDateString():''}</td>
-      <td class="actions">
-        <button class="btn-view" onclick="viewSource('\${s.id}')">👁 View</button>
-        <button class="btn-copy" onclick="copyScriptSource('\${s.id}')">📋 Copy</button>
-        <button class="btn-download" onclick="downloadScriptSource('\${s.id}')">⬇ DL</button>
-      </td></tr>\`).join('') + '</tbody></table>';
-}
-function filterScripts() {
-  const q = document.getElementById('searchInput').value.toLowerCase();
-  renderScripts(allScripts.filter(s => s.name.toLowerCase().includes(q) || (s.ownerUsername||s.ownerId).toLowerCase().includes(q)));
-}
-function getScript(id) { return allScripts.find(s => s.id === id); }
-function viewSource(id) {
-  currentScript = getScript(id);
-  if (!currentScript) return;
-  document.getElementById('modalScriptName').textContent = currentScript.name;
-  document.getElementById('modalOwner').textContent = currentScript.ownerUsername||currentScript.ownerId;
-  document.getElementById('modalScriptId').textContent = currentScript.id;
-  document.getElementById('modalSource').textContent = currentScript.source||'-- Source not available';
-  document.getElementById('sourceModal').style.display = 'flex';
-}
-async function copyScriptSource(id) { const s = getScript(id); if (s) { await navigator.clipboard.writeText(s.source||''); alert('✅ Copied!'); } }
-function downloadScriptSource(id) {
-  const s = getScript(id); if (!s) return;
-  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([s.source||''], {type:'text/plain'})), download: s.name.replace(/[^a-zA-Z0-9]/g,'_')+'.lua' });
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-}
-function closeModal() { document.getElementById('sourceModal').style.display = 'none'; }
-async function copySource() { if (currentScript) { await navigator.clipboard.writeText(currentScript.source||''); alert('✅ Copied!'); } }
-function downloadSource() { if (currentScript) downloadScriptSource(currentScript.id); }
-document.getElementById('sourceModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
-loadScripts();
-</script></body></html>`);
-});
-
-app.get("/admin/bot-servers", isAdmin, (req, res) => {
-  res.send(`<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Bot Servers - Admin</title>
-<style>* { box-sizing:border-box; margin:0; padding:0; } body { min-height:100vh; font-family:Arial,sans-serif; background:#050505; color:white; padding:20px; }
-.container { max-width:800px; margin:0 auto; } h1 { margin-bottom:20px; }
-.guild-item { background:rgba(255,255,255,.05); border-radius:12px; padding:16px 20px; margin-bottom:10px; display:flex; align-items:center; gap:15px; border:1px solid rgba(255,255,255,.06); }
-.guild-icon { width:50px; height:50px; border-radius:50%; background:#2c2f33; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:bold; color:#aaa; flex-shrink:0; }
-.guild-icon img { width:100%; height:100%; border-radius:50%; object-fit:cover; }
-.guild-name { font-weight:bold; font-size:18px; } .guild-id { color:#888; font-size:13px; } .guild-members { color:#666; font-size:13px; }
-.back { display:inline-block; margin:20px 0; padding:8px 16px; background:#5865F2; color:white; text-decoration:none; border-radius:6px; }
-.no-guilds { padding:40px; text-align:center; color:#666; border:1px dashed rgba(255,255,255,.12); border-radius:12px; }
-</style></head>
-<body><div class="container">
-  <h1>🤖 Bot Servers</h1>
-  <a class="back" href="/">⬅ Back</a>
-  <div id="guildsContainer"><p>Loading...</p></div>
-</div>
-<script>
-async function loadGuilds() {
-  const c = document.getElementById('guildsContainer');
-  const data = await (await fetch('/api/admin/guilds')).json();
-  if (!data.length) { c.innerHTML = '<div class="no-guilds">🤖 Bot belum di guild manapun.</div>'; return; }
-  function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  c.innerHTML = data.map(g => \`<div class="guild-item">
-    <div class="guild-icon">\${g.icon ? \`<img src="https://cdn.discordapp.com/icons/\${g.id}/\${g.icon}.png">\` : esc((g.name||'?')[0].toUpperCase())}</div>
-    <div><div class="guild-name">\${esc(g.name||'Unknown')}</div><div class="guild-id">ID: \${g.id}</div><div class="guild-members">👥 \${g.memberCount||'?'} members</div></div>
-  </div>\`).join('');
-}
-loadGuilds();
-</script></body></html>`);
-});
-
-// ==================== MAIN DASHBOARD ====================
 app.get("/", requireAuth, (req, res) => {
   const db = readDB();
+  const userId = req.session.user.id;
   const user = req.session.user;
-  const isAdminUser = user.id === ADMIN_USER_ID;
 
   const cards = db
-    .filter((s) => s.ownerId === user.id)
+    .filter((s) => s.ownerId === userId)
     .map((s) => {
       const base = getBaseUrl(req);
       const loaderPage = `${base}/api/loader/${s.id}.lua`;
-      const loaderCode = `loadstring(game:HttpGet("${base}/api/loader/${s.id}.lua?key=YOUR_KEY_HERE"))()`;
+      const loaderCodeDisplay = `script_key = "YOUR_KEY_HERE"\nloadstring(game:HttpGet("${base}/api/loader/${s.id}.lua"))()`;
+
       return `
 <div class="script-card">
   <div class="script-info">
@@ -705,8 +469,8 @@ app.get("/", requireAuth, (req, res) => {
   <div class="script-menu">
     <button class="dots" onclick="toggleMenu('${s.id}')">⋮</button>
     <div class="menu" id="menu-${s.id}">
-      <button onclick='openLoader(${JSON.stringify(loaderPage)})'>🔗 Open Loader</button>
-      <button onclick='copyLoaderCode(${JSON.stringify(loaderCode)})'>📋 Copy Loader</button>
+      <button onclick='openLoader(${JSON.stringify(loaderPage)})'>🔗 Open Page</button>
+      <button onclick='copyLoaderCode(${JSON.stringify(loaderCodeDisplay)})'>📋 Copy Loader</button>
       <button onclick="toggleScript('${s.id}')">${s.enabled ? "⏸ Disable" : "▶ Enable"}</button>
       <button class="delete" onclick="deleteScript('${s.id}')">🗑 Delete</button>
     </div>
@@ -715,163 +479,82 @@ app.get("/", requireAuth, (req, res) => {
     }).join("");
 
   res.send(`<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>SpideyProtect</title>
 <style>
-* { box-sizing:border-box; margin:0; padding:0; }
-body { min-height:100vh; font-family:Arial,Helvetica,sans-serif; color:white;
-  background: radial-gradient(circle at 10% 0%,rgba(255,0,0,.28),transparent 30%),
-    radial-gradient(circle at 90% 100%,rgba(0,110,255,.22),transparent 35%),#050505; }
-.header { padding:20px 30px; display:flex; align-items:center; justify-content:space-between;
-  border-bottom:1px solid rgba(255,255,255,.1); background:linear-gradient(90deg,#950000,#e00000,#101010); }
-.brand { display:flex; align-items:center; gap:12px; position:relative; }
-.logo { width:46px; height:46px; display:flex; align-items:center; justify-content:center;
-  border-radius:13px; background:white; color:#c00000; font-size:25px; box-shadow:0 0 25px rgba(255,0,0,.3); }
-.brand h1 { font-size:23px; font-weight:800; }
-.brand span { display:block; margin-top:3px; color:rgba(255,255,255,.65); font-size:11px; }
-.admin-menu { position:relative; margin-right:6px; }
-.menu-toggle { width:38px; height:38px; border:none; border-radius:10px; background:rgba(255,255,255,.08); color:white; font-size:22px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-.admin-dropdown { display:none; position:absolute; top:48px; left:0; min-width:180px; background:#161616; border:1px solid rgba(255,255,255,.1); border-radius:12px; padding:6px; box-shadow:0 15px 40px rgba(0,0,0,.6); z-index:200; }
-.admin-dropdown.show { display:block; }
-.admin-dropdown a { display:block; padding:10px 14px; border-radius:8px; color:#eee; text-decoration:none; font-size:13px; transition:background .15s; }
-.admin-dropdown a:hover { background:#252525; }
-.user-info { display:flex; align-items:center; gap:10px; }
-.user-avatar { width:36px; height:36px; border-radius:50%; border:2px solid rgba(255,255,255,.3); }
-.user-name { font-size:13px; font-weight:700; }
-.logout-btn { padding:7px 14px; border:1px solid rgba(255,255,255,.2); border-radius:8px; background:transparent; color:rgba(255,255,255,.7); font-size:12px; cursor:pointer; text-decoration:none; }
-.logout-btn:hover { background:rgba(255,255,255,.1); }
-.invite-btn { display:inline-flex; align-items:center; gap:7px; padding:7px 14px; border:none; border-radius:8px; background:#5865F2; color:white; font-size:12px; font-weight:700; text-decoration:none; }
-.invite-btn svg { width:16px; height:16px; fill:white; }
-.container { width:min(1100px,calc(100% - 30px)); margin:35px auto; }
-.hero { padding:28px; border-radius:20px; background:linear-gradient(135deg,rgba(255,0,0,.16),rgba(0,100,255,.07)); border:1px solid rgba(255,255,255,.1); }
-.hero h2 { font-size:27px; margin-bottom:8px; }
-.hero p { color:#aaa; font-size:14px; }
-.form-grid { margin-top:22px; display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-input,textarea { width:100%; outline:none; border:1px solid rgba(255,255,255,.12); border-radius:11px; background:#101010; color:white; padding:13px; font-family:inherit; }
-textarea { grid-column:1/-1; min-height:180px; resize:vertical; }
-.file-row { display:flex; align-items:center; gap:10px; grid-column:1/-1; }
-.file-label { display:inline-flex; align-items:center; justify-content:center; padding:12px 18px; border-radius:11px; background:white; color:#a00000; font-size:13px; font-weight:800; cursor:pointer; }
-.file-name { color:#888; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-#fileInput { display:none; }
-.upload-button { grid-column:1/-1; width:100%; padding:14px; border:none; border-radius:11px; background:linear-gradient(90deg,#d00000,#006eff); color:white; font-weight:800; cursor:pointer; }
-.section-title { margin:25px 0 12px; color:#aaa; font-size:15px; }
-.scripts { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:15px; }
-.script-card { position:relative; display:flex; align-items:center; justify-content:space-between; padding:18px; border-radius:17px; background:linear-gradient(145deg,#151515,#0d0d0d); border:1px solid rgba(255,255,255,.08); }
-.script-info { display:flex; align-items:center; gap:13px; }
-.script-icon { width:45px; height:45px; display:flex; align-items:center; justify-content:center; border-radius:12px; background:linear-gradient(135deg,#e00000,#006eff); font-size:22px; }
-.script-name { max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:15px; font-weight:700; }
-.script-status { margin-top:4px; font-size:11px; }
-.script-status.on { color:#54ff88; } .script-status.off { color:#ff4d4d; }
-.script-menu { position:relative; }
-.dots { width:38px; height:38px; border:none; border-radius:10px; background:#1c1c1c; color:white; font-size:23px; cursor:pointer; }
-.menu { display:none; position:absolute; z-index:100; right:0; top:45px; width:180px; padding:6px; border-radius:12px; background:#161616; border:1px solid rgba(255,255,255,.1); box-shadow:0 15px 40px rgba(0,0,0,.6); }
-.menu.show { display:block; }
-.menu button { width:100%; padding:10px; border:none; border-radius:8px; background:transparent; color:#eee; text-align:left; cursor:pointer; }
-.menu button:hover { background:#252525; }
-.menu .delete { color:#ff4d4d; }
-.empty { padding:50px; text-align:center; color:#666; border:1px dashed rgba(255,255,255,.12); border-radius:18px; }
-@media(max-width:700px) { .header { padding:18px; } .user-name { display:none; } .form-grid { grid-template-columns:1fr; } textarea,.upload-button { grid-column:auto; } }
-</style></head>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { min-height: 100vh; font-family: Arial, sans-serif; color: white; background: #050505; }
+.header { padding: 20px; display: flex; align-items: center; justify-content: space-between; background: #111; }
+.container { width: min(1000px, 90%); margin: 30px auto; }
+.hero { padding: 25px; background: #111; border-radius: 12px; border: 1px solid #222; }
+.form-grid { display: grid; gap: 10px; margin-top: 15px; }
+input, textarea { width: 100%; padding: 12px; background: #000; border: 1px solid #333; color: white; border-radius: 8px; }
+textarea { height: 120px; }
+button.upload-button { padding: 12px; background: #e00000; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+.scripts { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; margin-top: 20px; }
+.script-card { background: #111; border: 1px solid #222; border-radius: 12px; padding: 15px; display: flex; justify-content: space-between; align-items: center; }
+.dots { background: none; border: none; color: white; font-size: 20px; cursor: pointer; }
+.menu { display: none; position: absolute; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 5px; }
+.menu.show { display: block; }
+.menu button { display: block; width: 100%; text-align: left; padding: 8px; background: none; border: none; color: white; cursor: pointer; }
+.menu button.delete { color: #ff4444; }
+</style>
+</head>
 <body>
 <header class="header">
-  <div class="brand">
-    ${isAdminUser ? `
-    <div class="admin-menu">
-      <button class="menu-toggle" onclick="toggleAdminMenu()">⋮</button>
-      <div class="admin-dropdown" id="adminDropdown">
-        <a href="/admin/dashboard">📊 Dashboard</a>
-        <a href="/admin/source">📄 Source Script</a>
-        <a href="/admin/bot-servers">🤖 Bot Server</a>
-      </div>
-    </div>` : ''}
-    <div class="logo">🕷️</div>
-    <div><h1>SpideyProtect</h1><span>Lua Protection System</span></div>
-  </div>
-  <div class="user-info">
-    <img class="user-avatar" src="${escapeHtml(user.avatar)}" alt="avatar">
-    <span class="user-name">${escapeHtml(user.username)}</span>
-    <a class="invite-btn" href="https://discord.com/oauth2/authorize?client_id=1541101786855899177&permissions=2415937584&integration_type=0&scope=bot" target="_blank">
-      <svg viewBox="0 0 24 24"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.056a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
-      Invite Bot
-    </a>
-    <a class="logout-btn" href="/logout">Logout</a>
+  <h1>🕷️ SpideyProtect</h1>
+  <div>
+    <span>${escapeHtml(user.username)}</span>
+    <a href="/logout" style="color:#ff4444; margin-left: 10px;">Logout</a>
   </div>
 </header>
 <main class="container">
-  <section class="hero">
-    <h2>Protect Your Scripts 🕷️</h2>
-    <p>Upload a Lua/TXT file atau paste source secara manual.</p>
+  <div class="hero">
+    <h2>Upload & Protect Script</h2>
     <div class="form-grid">
-      <input id="scriptName" placeholder="Script name...">
-      <div class="file-row">
-        <label class="file-label" for="fileInput">📁 Upload File</label>
-        <input id="fileInput" type="file" accept=".lua,.txt,text/plain">
-        <span class="file-name" id="fileName">No file selected</span>
-      </div>
-      <textarea id="scriptSource" placeholder="Paste Lua source di sini..."></textarea>
-      <button class="upload-button" onclick="uploadScript()">🕷️ Protect &amp; Upload</button>
+      <input id="scriptName" placeholder="Script Name...">
+      <textarea id="scriptSource" placeholder="Paste your Lua script source here..."></textarea>
+      <button class="upload-button" onclick="uploadScript()">Upload Script</button>
     </div>
-  </section>
-  <div class="section-title">Your Scripts</div>
-  <section class="scripts">
-    ${cards || `<div class="empty">🕷️ Belum ada script.<br>Upload Lua script pertama kamu di atas.</div>`}
-  </section>
+  </div>
+  <div class="scripts">${cards || "<p>No scripts found.</p>"}</div>
 </main>
 <script>
-const fileInput = document.getElementById("fileInput");
-const fileName = document.getElementById("fileName");
-const scriptName = document.getElementById("scriptName");
-const scriptSource = document.getElementById("scriptSource");
-fileInput.addEventListener("change", function() {
-  const file = this.files[0]; if (!file) return;
-  const fn = file.name.toLowerCase();
-  if (!fn.endsWith(".lua") && !fn.endsWith(".txt")) { alert("Hanya .lua atau .txt!"); this.value=""; return; }
-  if (file.size > 10*1024*1024) { alert("Max 10MB."); this.value=""; return; }
-  fileName.textContent = file.name;
-  scriptName.value = file.name.replace(/\\.(lua|txt)$/i, "");
-  const reader = new FileReader();
-  reader.onload = e => { scriptSource.value = e.target.result; };
-  reader.readAsText(file);
-});
 function toggleMenu(id) {
   document.querySelectorAll(".menu").forEach(m => m.classList.remove("show"));
-  const m = document.getElementById("menu-"+id); if (m) m.classList.toggle("show");
+  const m = document.getElementById("menu-" + id);
+  if (m) m.classList.toggle("show");
 }
-function toggleAdminMenu() { document.getElementById("adminDropdown").classList.toggle("show"); }
-document.addEventListener("click", e => {
-  if (!e.target.closest(".script-menu")) document.querySelectorAll(".menu").forEach(m => m.classList.remove("show"));
-  if (!e.target.closest(".admin-menu")) { const d = document.getElementById("adminDropdown"); if (d) d.classList.remove("show"); }
-});
 async function uploadScript() {
-  const name = scriptName.value.trim();
-  const source = scriptSource.value;
-  if (!name) { alert("Masukkan nama script!"); return; }
-  if (!source.trim()) { alert("Masukkan Lua source!"); return; }
-  try {
-    const r = await fetch("/api/scripts", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({name,source}) });
-    const d = await r.json();
-    if (!r.ok) { alert(d.error||"Upload gagal"); return; }
-    location.reload();
-  } catch { alert("Server error!"); }
+  const name = document.getElementById("scriptName").value;
+  const source = document.getElementById("scriptSource").value;
+  if (!name || !source) return alert("Fill all fields");
+  const res = await fetch("/api/scripts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, source })
+  });
+  if (res.ok) location.reload();
 }
 async function toggleScript(id) {
-  const r = await fetch("/api/scripts/"+id+"/toggle", {method:"POST"});
-  if (r.ok) location.reload(); else alert("Gagal ubah status");
+  await fetch("/api/scripts/" + id + "/toggle", { method: "POST" });
+  location.reload();
 }
 async function deleteScript(id) {
-  if (!confirm("Hapus script ini?")) return;
-  const r = await fetch("/api/scripts/"+id, {method:"DELETE"});
-  if (r.ok) location.reload(); else alert("Gagal hapus");
+  if (!confirm("Delete?")) return;
+  await fetch("/api/scripts/" + id, { method: "DELETE" });
+  location.reload();
 }
-async function copyLoaderCode(code) {
-  try { await navigator.clipboard.writeText(code); alert("Loader disalin!"); }
-  catch { alert("Gagal copy"); }
-}
+function copyLoaderCode(code) { navigator.clipboard.writeText(code); alert("Copied!"); }
 function openLoader(url) { window.open(url, "_blank"); }
 </script>
-</body></html>`);
+</body>
+</html>`);
 });
 
-// ==================== START ====================
-app.listen(PORT, () => console.log(`SpideyProtect running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`SpideyProtect running on port ${PORT}`);
+});
