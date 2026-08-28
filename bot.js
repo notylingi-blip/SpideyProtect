@@ -54,8 +54,8 @@ function isBlacklisted(userId) {
 }
 
 function generateKey() {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length: 20 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  return Array.from({ length: 40 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
 function hasPermission(member, guildId) {
@@ -320,8 +320,7 @@ client.on("interactionCreate", async interaction => {
           const isFreeMode = cfg.freeMode && cfg.freeMode[scriptId] === true;
 
           if (isFreeMode) {
-            // FIXED: Free mode loader langsung ke /api/loader tanpa key
-            const loaderCode = `loadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${scriptId}.lua?freemode=1"))()`;
+            const loaderCode = `script_key="FREE_MODE"\nloadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${scriptId}.lua"))()`;
             return interaction.editReply({ 
               content: `📜 **FREE MODE ENABLED**\nNo key required!\n\`\`\`lua\n${loaderCode}\n\`\`\`` 
             }).catch(() => {});
@@ -340,8 +339,7 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ You don't have a key for this script!" }).catch(() => {});
           }
 
-          // FIXED: Loader dengan key sebagai query parameter
-          const loaderCode = `script_key="${validKey.key}"\nloadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${validKey.scriptId}.lua?key="..script_key))()`;
+          const loaderCode = `script_key="${validKey.key}"\nloadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${validKey.scriptId}.lua"))()`;
           return interaction.editReply({ content: `📜 Your loader:\n\`\`\`lua\n${loaderCode}\n\`\`\`` }).catch(() => {});
         } catch (err) {
           console.error("Get script error:", err);
@@ -607,14 +605,20 @@ client.on("interactionCreate", async interaction => {
           if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
           if (!cfg[interaction.guildId].freeMode) cfg[interaction.guildId].freeMode = {};
 
+          const myScripts = await getScriptsByOwner(interaction.user.id);
+          const owned = myScripts.find(s => s.id === scriptId);
+          if (!owned) {
+            return interaction.editReply({ content: "❌ This script is not yours!" }).catch(() => {});
+          }
+
           if (mode === "enable") {
             cfg[interaction.guildId].freeMode[scriptId] = true;
             writeConfig(cfg);
-            return interaction.editReply({ content: `✅ Free mode has been **ENABLED** for the selected script!` }).catch(() => {});
+            return interaction.editReply({ content: `✅ Free mode has been **ENABLED** for script **${owned.name}**!` }).catch(() => {});
           } else if (mode === "disable") {
             delete cfg[interaction.guildId].freeMode[scriptId];
             writeConfig(cfg);
-            return interaction.editReply({ content: `✅ Free mode has been **DISABLED** for the selected script!` }).catch(() => {});
+            return interaction.editReply({ content: `✅ Free mode has been **DISABLED** for script **${owned.name}**!` }).catch(() => {});
           }
         } catch (err) {
           console.error("Freemode select error:", err);
@@ -700,6 +704,12 @@ client.on("interactionCreate", async interaction => {
           const { roleId } = tempData;
           buyerRoleTempData.delete(interaction.user.id);
 
+          const myScripts = await getScriptsByOwner(interaction.user.id);
+          const owned = myScripts.find(s => s.id === scriptId);
+          if (!owned) {
+            return interaction.editReply({ content: "❌ This script is not yours!" }).catch(() => {});
+          }
+
           const cfg = readConfig();
           if (!cfg[interaction.guildId]) cfg[interaction.guildId] = {};
           if (!cfg[interaction.guildId].buyerRoles) cfg[interaction.guildId].buyerRoles = {};
@@ -707,7 +717,7 @@ client.on("interactionCreate", async interaction => {
           cfg[interaction.guildId].buyerRoles[scriptId] = roleId;
           writeConfig(cfg);
 
-          return interaction.editReply({ content: `✅ Buyer role <@&${roleId}> has been set for the selected script!` }).catch(() => {});
+          return interaction.editReply({ content: `✅ Buyer role <@&${roleId}> has been set for script **${owned.name}**!` }).catch(() => {});
         } catch (err) {
           console.error("Set buyer role select error:", err);
           return interaction.editReply({ content: "❌ Failed to set buyer role. Please try again." }).catch(() => {});
@@ -1012,6 +1022,12 @@ client.on("interactionCreate", async interaction => {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         
         try {
+          const myScripts = await getScriptsByOwner(interaction.user.id);
+          
+          if (myScripts.length === 0) {
+            return interaction.editReply({ content: "❌ You don't have any scripts yet." }).catch(() => {});
+          }
+
           const options = [
             new StringSelectMenuOptionBuilder()
               .setLabel("Enable Free Mode")
