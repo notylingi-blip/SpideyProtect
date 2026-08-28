@@ -96,7 +96,7 @@ function generateId() {
 
 function generateKey() {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length: 30 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  return Array.from({ length: 40 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
 function escapeHtml(value) {
