@@ -4,6 +4,7 @@ const path = require("path");
 const crypto = require("crypto");
 const session = require("express-session");
 const axios = require("axios");
+const luamin = require("luamin");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -54,33 +55,184 @@ const DISCORD_REDIRECT_URI =
   process.env.DISCORD_REDIRECT_URI || "http://localhost:3000/auth/discord/callback";
 const API_SECRET = process.env.API_SECRET || "spidey-internal-secret";
 
-// ==================== OBFUSCATION ====================
-async function obfuscateLua(source) {
+// ==================== ADVANCED OBFUSCATION ====================
+function obfuscateLua(source) {
   try {
-    const response = await axios.post('https://wearedevs.net/api/obfuscator', {
-      code: source,
-      options: {
-        encodeLiterals: true,
-        compress: true,
-        minify: true
-      }
-    }, {
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'SpideyProtect/1.0'
-      },
-      timeout: 30000
+    let code = source;
+
+    // STEP 1: Hapus comments
+    code = code.replace(/--\[\[[\s\S]*?\]\]/g, '');
+    code = code.replace(/--.*$/gm, '');
+    code = code.replace(/\/\*[\s\S]*?\*\//g, '');
+
+    // STEP 2: Encode all strings dengan multiple layers
+    code = code.replace(/"([^"]*)"/g, function(match, str) {
+      if (str.length === 0) return '""';
+      let encoded = encodeStringMultiLayer(str);
+      return '"' + encoded + '"';
     });
 
-    if (response.data && response.data.obfuscated) {
-      return response.data.obfuscated;
+    // STEP 3: Replace ' dengan " untuk konsistensi
+    code = code.replace(/'([^']*)'/g, function(match, str) {
+      if (str.length === 0) return "''";
+      let encoded = encodeStringMultiLayer(str);
+      return '"' + encoded + '"';
+    });
+
+    // STEP 4: Control Flow Obfuscation - tambah garbage code
+    code = insertGarbageCode(code);
+
+    // STEP 5: Variable renaming dengan nama random
+    let varMap = {};
+    let counter = 0;
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    
+    // Rename local variables
+    const varRegex = /local\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
+    code = code.replace(varRegex, function(match, varName) {
+      if (!varMap[varName] && !isReservedWord(varName)) {
+        let newName = generateRandomName(chars, counter);
+        varMap[varName] = newName;
+        counter++;
+      }
+      return 'local ' + (varMap[varName] || varName);
+    });
+
+    // Rename function names
+    const funcRegex = /function\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
+    code = code.replace(funcRegex, function(match, funcName) {
+      if (!varMap[funcName] && !isReservedWord(funcName)) {
+        let newName = generateRandomName(chars, counter);
+        varMap[funcName] = newName;
+        counter++;
+      }
+      return 'function ' + (varMap[funcName] || funcName);
+    });
+
+    // Rename variable usage
+    for (let [oldName, newName] of Object.entries(varMap)) {
+      const regex = new RegExp('\\b' + oldName + '\\b', 'g');
+      code = code.replace(regex, newName);
     }
-    return source;
+
+    // STEP 6: Minify dengan luamin
+    try {
+      code = luamin.minify(code);
+    } catch (e) {
+      // lanjut
+    }
+
+    // STEP 7: Tambah anti-debug
+    code = addAntiDebug(code);
+
+    // STEP 8: Tambah garbage code lagi
+    code = insertGarbageCode(code);
+
+    return code;
+
   } catch (error) {
     console.error('Obfuscation error:', error.message);
-    return source;
+    // Fallback: minify aja
+    try {
+      return luamin.minify(source);
+    } catch {
+      return source;
+    }
   }
 }
+
+function encodeStringMultiLayer(str) {
+  // Layer 1: Encode ke hex
+  let hex = '';
+  for (let i = 0; i < str.length; i++) {
+    hex += '\\x' + str.charCodeAt(i).toString(16).padStart(2, '0');
+  }
+  
+  // Layer 2: Split dan shuffle
+  let parts = hex.match(/.{1,6}/g) || [hex];
+  let shuffled = parts.sort(() => Math.random() - 0.5);
+  
+  // Layer 3: Gabung dengan string concat
+  let result = '';
+  for (let i = 0; i < shuffled.length; i++) {
+    if (i > 0) result += '..';
+    result += '"' + shuffled[i] + '"';
+  }
+  
+  return result;
+}
+
+function generateRandomName(chars, seed) {
+  let name = '';
+  const length = 5 + (seed % 5);
+  for (let i = 0; i < length; i++) {
+    name += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return name;
+}
+
+function isReservedWord(word) {
+  const reserved = [
+    'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 
+    'function', 'goto', 'if', 'in', 'local', 'nil', 'not', 'or', 
+    'repeat', 'return', 'then', 'true', 'until', 'while',
+    'self', 'true', 'false', 'nil'
+  ];
+  return reserved.includes(word);
+}
+
+function insertGarbageCode(code) {
+  const garbage = [
+    'local a,b,c=...;local d,e,f=...;',
+    'local _=...;local __=...;',
+    'local t={};local function x()return...end;',
+    'local function y()local a=...;return a;end;',
+    'local z=function()return...;end;',
+    'local w=...;local v=...;local u=...;',
+  ];
+  
+  // Insert random garbage at random positions
+  let lines = code.split('\n');
+  for (let i = 0; i < Math.min(3, lines.length); i++) {
+    const pos = Math.floor(Math.random() * Math.max(1, lines.length - 1));
+    const garbageIdx = Math.floor(Math.random() * garbage.length);
+    const gar = garbage[garbageIdx].replace(/\.\.\./g, Math.random().toString(36).substring(2, 6));
+    if (lines[pos]) {
+      lines.splice(pos + 1, 0, gar);
+    }
+  }
+  
+  // Tambah di awal dan akhir
+  const startGar = garbage[Math.floor(Math.random() * garbage.length)].replace(/\.\.\./g, Math.random().toString(36).substring(2, 6));
+  const endGar = garbage[Math.floor(Math.random() * garbage.length)].replace(/\.\.\./g, Math.random().toString(36).substring(2, 6));
+  
+  lines.unshift(startGar);
+  lines.push(endGar);
+  
+  return lines.join('\n');
+}
+
+function addAntiDebug(code) {
+  const antiDebug = `
+local function antiDebug()
+  local debugInfo = debug and debug.getinfo or nil
+  if debugInfo then
+    local info = debugInfo(2)
+    if info and info.name and info.name:match("debug") then
+      return true
+    end
+  end
+  return false
+end
+
+if antiDebug() then
+  error("Execution blocked")
+end
+`;
+  return antiDebug + '\n' + code;
+}
+
+// ==================== REST OF SERVER CODE ====================
 
 function readDB() {
   try {
@@ -393,7 +545,7 @@ app.get("/api/scripts/internal/guild/:guildId", (req, res) => {
   );
 });
 
-app.post("/api/scripts", requireAuth, async (req, res) => {
+app.post("/api/scripts", requireAuth, (req, res) => {
   const { name, source, guildId } = req.body;
 
   if (!name || typeof name !== "string") {
@@ -416,11 +568,12 @@ app.post("/api/scripts", requireAuth, async (req, res) => {
   let finalSource = source;
   let obfuscated = false;
   try {
-    finalSource = await obfuscateLua(source);
+    console.log(`🔄 Obfuscating script: ${name}...`);
+    finalSource = obfuscateLua(source);
     obfuscated = finalSource !== source;
     console.log(`✅ Script ${name} obfuscated successfully`);
   } catch (err) {
-    console.error(`❌ Obfuscation failed for ${name}, using original source:`, err.message);
+    console.error(`❌ Obfuscation failed for ${name}:`, err.message);
     finalSource = source;
   }
 
@@ -545,7 +698,7 @@ app.delete("/api/scripts/internal/:id", (req, res) => {
   res.json({ success: true, name: script.name });
 });
 
-app.put("/api/scripts/internal/:id", async (req, res) => {
+app.put("/api/scripts/internal/:id", (req, res) => {
   const secret = req.headers["x-api-secret"];
   
   if (secret !== API_SECRET) {
@@ -570,7 +723,8 @@ app.put("/api/scripts/internal/:id", async (req, res) => {
   let finalSource = source;
   let obfuscated = false;
   try {
-    finalSource = await obfuscateLua(source);
+    console.log(`🔄 Re-obfuscating script: ${script.name}...`);
+    finalSource = obfuscateLua(source);
     obfuscated = finalSource !== source;
     console.log(`✅ Script ${script.name} re-obfuscated successfully`);
   } catch (err) {
@@ -812,6 +966,16 @@ h1 { font-size: 24px; font-weight: 850; color: #fff; margin-bottom: 4px; }
   font-weight: 800;
   margin-left: 6px;
 }
+.obf-badge {
+  display: inline-block;
+  background: #ff6b00;
+  color: white;
+  padding: 2px 12px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 800;
+  margin-left: 6px;
+}
 .loader-label {
   text-align: left;
   font-size: 11px;
@@ -886,7 +1050,7 @@ h1 { font-size: 24px; font-weight: 850; color: #fff; margin-bottom: 4px; }
   <div class="script-name">
     SCRIPT: <span>${escapeHtml(script.name)}</span>
     ${isFreeMode ? '<span class="free-badge">FREE MODE</span>' : ''}
-    ${script.obfuscated ? '<span class="free-badge" style="background:#ff6b00;">🔒 OBFUSCATED</span>' : ''}
+    ${script.obfuscated ? '<span class="obf-badge">🔒 OBFUSCATED</span>' : ''}
   </div>
   <div class="loader-label">📜 LOADER</div>
   <div class="code-block">
@@ -895,7 +1059,7 @@ h1 { font-size: 24px; font-weight: 850; color: #fff; margin-bottom: 4px; }
   <button class="copy-btn" onclick="copyLoader()">📋 Copy Loader</button>
   <div class="security-note">
     🔒 <strong>Source Protected</strong> — The original source is never displayed here.<br>
-    ${script.obfuscated ? '🔐 <strong>Obfuscated</strong> — Source is obfuscated for security.' : ''}
+    ${script.obfuscated ? '🔐 <strong>Advanced Obfuscation</strong> — Multi-layer protection applied.' : ''}
     ${isFreeMode ? '🆓 <strong>Free Mode Active</strong> — No key required!' : '🔑 <strong>Key Required</strong> — Replace YOUR_KEY_HERE with a valid key.'}
   </div>
   <div class="footer-text">Protected by <strong>SpideyProtect</strong> 🕷️</div>
@@ -1074,7 +1238,7 @@ td { font-size:14px; }
 .status { font-size:12px; padding:4px 8px; border-radius:12px; }
 .status.enabled { background: #1a5a2a; color:#88ff88; }
 .status.disabled { background: #5a1a1a; color:#ff8888; }
-.obfuscated-badge { font-size:10px; padding:2px 8px; border-radius:10px; background:#ff6b00; color:white; margin-left:4px; }
+.obf-badge { font-size:10px; padding:2px 8px; border-radius:10px; background:#ff6b00; color:white; margin-left:4px; }
 .actions { display:flex; gap:6px; flex-wrap:wrap; }
 .actions button { padding:6px 12px; border:none; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; transition:transform .15s; }
 .actions button:hover { transform:scale(1.05); }
@@ -1578,7 +1742,7 @@ textarea { grid-column: 1 / -1; min-height: 180px; resize: vertical; }
 <main class="container">
   <section class="hero">
     <h2>Protect Your Scripts 🕷️</h2>
-    <p>Upload a Lua/TXT file or paste your source manually. Source will be automatically obfuscated!</p>
+    <p>Upload a Lua/TXT file or paste your source manually. Source will be automatically obfuscated with advanced protection!</p>
     <div class="form-grid">
       <input id="scriptName" placeholder="Script name...">
       <div class="file-row">
