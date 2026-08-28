@@ -54,6 +54,34 @@ const DISCORD_REDIRECT_URI =
   process.env.DISCORD_REDIRECT_URI || "http://localhost:3000/auth/discord/callback";
 const API_SECRET = process.env.API_SECRET || "spidey-internal-secret";
 
+// ==================== OBFUSCATION ====================
+async function obfuscateLua(source) {
+  try {
+    const response = await axios.post('https://wearedevs.net/api/obfuscator', {
+      code: source,
+      options: {
+        encodeLiterals: true,
+        compress: true,
+        minify: true
+      }
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'SpideyProtect/1.0'
+      },
+      timeout: 30000
+    });
+
+    if (response.data && response.data.obfuscated) {
+      return response.data.obfuscated;
+    }
+    return source;
+  } catch (error) {
+    console.error('Obfuscation error:', error.message);
+    return source;
+  }
+}
+
 function readDB() {
   try {
     return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
@@ -95,8 +123,8 @@ function generateId() {
 }
 
 function generateKey() {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length: 30 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  return Array.from({ length: 40 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
 function escapeHtml(value) {
@@ -308,6 +336,7 @@ app.get("/api/scripts", requireAuth, (req, res) => {
         name: script.name,
         enabled: script.enabled,
         createdAt: script.createdAt,
+        obfuscated: script.obfuscated || false
       }))
   );
 });
@@ -334,6 +363,7 @@ app.get("/api/scripts/internal", (req, res) => {
       ownerId: script.ownerId,
       ownerUsername: script.ownerUsername,
       guildId: script.guildId,
+      obfuscated: script.obfuscated || false
     }))
   );
 });
@@ -358,11 +388,12 @@ app.get("/api/scripts/internal/guild/:guildId", (req, res) => {
       ownerId: script.ownerId,
       ownerUsername: script.ownerUsername,
       guildId: script.guildId,
+      obfuscated: script.obfuscated || false
     }))
   );
 });
 
-app.post("/api/scripts", requireAuth, (req, res) => {
+app.post("/api/scripts", requireAuth, async (req, res) => {
   const { name, source, guildId } = req.body;
 
   if (!name || typeof name !== "string") {
@@ -381,7 +412,19 @@ app.post("/api/scripts", requireAuth, (req, res) => {
   const filename = `${id}.lua`;
   const filepath = path.join(SCRIPTS_DIR, filename);
 
-  fs.writeFileSync(filepath, source, "utf8");
+  // OBFUSCATE SOURCE
+  let finalSource = source;
+  let obfuscated = false;
+  try {
+    finalSource = await obfuscateLua(source);
+    obfuscated = finalSource !== source;
+    console.log(`✅ Script ${name} obfuscated successfully`);
+  } catch (err) {
+    console.error(`❌ Obfuscation failed for ${name}, using original source:`, err.message);
+    finalSource = source;
+  }
+
+  fs.writeFileSync(filepath, finalSource, "utf8");
 
   const script = {
     id,
@@ -392,6 +435,7 @@ app.post("/api/scripts", requireAuth, (req, res) => {
     ownerUsername: req.session.user.username,
     guildId: guildId || null,
     createdAt: new Date().toISOString(),
+    obfuscated: obfuscated
   };
 
   const db = readDB();
@@ -409,6 +453,7 @@ app.post("/api/scripts", requireAuth, (req, res) => {
       name: script.name,
       enabled: script.enabled,
       createdAt: script.createdAt,
+      obfuscated: script.obfuscated
     },
     loader: loaderPage,
     executeLoader,
@@ -500,6 +545,46 @@ app.delete("/api/scripts/internal/:id", (req, res) => {
   res.json({ success: true, name: script.name });
 });
 
+app.put("/api/scripts/internal/:id", async (req, res) => {
+  const secret = req.headers["x-api-secret"];
+  
+  if (secret !== API_SECRET) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const { source } = req.body;
+  if (!source) {
+    return res.status(400).json({ error: "Source is required" });
+  }
+
+  const db = readDB();
+  const script = db.find(x => x.id === req.params.id);
+  
+  if (!script) {
+    return res.status(404).json({ error: "Script not found" });
+  }
+
+  const filepath = path.join(SCRIPTS_DIR, script.filename);
+  
+  // OBFUSCATE SOURCE
+  let finalSource = source;
+  let obfuscated = false;
+  try {
+    finalSource = await obfuscateLua(source);
+    obfuscated = finalSource !== source;
+    console.log(`✅ Script ${script.name} re-obfuscated successfully`);
+  } catch (err) {
+    console.error(`❌ Re-obfuscation failed for ${script.name}:`, err.message);
+    finalSource = source;
+  }
+  
+  fs.writeFileSync(filepath, finalSource, "utf8");
+  script.obfuscated = obfuscated;
+  writeDB(db);
+
+  res.json({ success: true, obfuscated: script.obfuscated });
+});
+
 app.get("/api/execute/:id", (req, res) => {
   const db = readDB();
   const script = db.find((x) => x.id === req.params.id);
@@ -536,7 +621,7 @@ app.get("/api/execute/:id", (req, res) => {
     .send(source);
 });
 
-// ==================== LOADER ENDPOINT - FIXED ====================
+// ==================== LOADER ENDPOINT ====================
 app.get("/api/loader/:id.lua", (req, res) => {
   const scriptId = req.params.id;
   const db = readDB();
@@ -550,8 +635,15 @@ app.get("/api/loader/:id.lua", (req, res) => {
   const isFreeMode = botConfig[script.guildId]?.freeMode?.[scriptId] === true;
   const base = getBaseUrl(req);
 
-  // CEK KEY DARI QUERY ATAU HEADER
-  const key = req.query.key || req.headers["x-script-key"];
+  // CEK KEY DARI HEADER (x-script-key) ATAU QUERY ATAU BODY
+  let key = req.headers["x-script-key"] || req.query.key || req.body?.key;
+  
+  // JIKA KEY ADALAH "FREE_MODE", SET FLAG
+  let isFreeModeRequest = false;
+  if (key && key.toUpperCase() === "FREE_MODE") {
+    isFreeModeRequest = true;
+    key = null;
+  }
 
   // CEK APAKAH INI REQUEST DARI ROBLOX EXECUTOR
   const isRobloxRequest = req.headers["user-agent"] && 
@@ -569,13 +661,29 @@ end
     `;
   }
 
-  // JIKA TIDAK ADA KEY DAN BUKAN FREEMODE → KICK
-  if (!key && !req.query.freemode && isRobloxRequest) {
+  // ===== HANDLE FREE MODE =====
+  if (isFreeModeRequest || isFreeMode) {
+    if (!isFreeMode) {
+      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Free Mode Not Enabled"));
+    }
+    
+    if (!script.enabled) {
+      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Script Disabled"));
+    }
+    
+    const fp = path.join(SCRIPTS_DIR, script.filename);
+    if (!fs.existsSync(fp)) {
+      return res.status(404).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Source Missing"));
+    }
+    
     return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-      .send(kickPlayer("No Key Provided"));
+      .send(fs.readFileSync(fp, "utf8"));
   }
 
-  // JIKA ADA KEY → PROSES SEBAGAI EXECUTOR REQUEST
+  // ===== HANDLE KEY =====
   if (key) {
     const keys = readKeys();
     const keyData = keys.find((k) => k.key === key.toLowerCase().trim());
@@ -625,31 +733,10 @@ end
       .send(fs.readFileSync(fp, "utf8"));
   }
 
-  // CEK FREEMODE REQUEST
-  if (req.query.freemode === "1" || req.query.freemode === "true") {
-    if (!isFreeMode) {
-      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-        .send(kickPlayer("Free Mode Not Enabled"));
-    }
-    if (!script.enabled) {
-      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-        .send(kickPlayer("Script Disabled"));
-    }
-    const fp = path.join(SCRIPTS_DIR, script.filename);
-    if (!fs.existsSync(fp)) {
-      return res.status(404).type("text/plain").set("Cache-Control", "no-store")
-        .send(kickPlayer("Source Missing"));
-    }
-    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-      .send(fs.readFileSync(fp, "utf8"));
-  }
-
   // ===== TIDAK ADA KEY/FREEMODE → TAMPILKAN HALAMAN WEB =====
-  // FORMAT LOADER: script_key di baris pertama, lalu loadstring dengan URL saja
   let loaderCode;
   if (isFreeMode) {
-    // FREE MODE: Tampilkan tulisan FREE MODE di loader
-    loaderCode = `-- FREE MODE ENABLED\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua?freemode=1"))()`;
+    loaderCode = `script_key="FREE_MODE"\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()`;
   } else {
     loaderCode = `script_key="YOUR_KEY_HERE"\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()`;
   }
@@ -799,6 +886,7 @@ h1 { font-size: 24px; font-weight: 850; color: #fff; margin-bottom: 4px; }
   <div class="script-name">
     SCRIPT: <span>${escapeHtml(script.name)}</span>
     ${isFreeMode ? '<span class="free-badge">FREE MODE</span>' : ''}
+    ${script.obfuscated ? '<span class="free-badge" style="background:#ff6b00;">🔒 OBFUSCATED</span>' : ''}
   </div>
   <div class="loader-label">📜 LOADER</div>
   <div class="code-block">
@@ -807,6 +895,7 @@ h1 { font-size: 24px; font-weight: 850; color: #fff; margin-bottom: 4px; }
   <button class="copy-btn" onclick="copyLoader()">📋 Copy Loader</button>
   <div class="security-note">
     🔒 <strong>Source Protected</strong> — The original source is never displayed here.<br>
+    ${script.obfuscated ? '🔐 <strong>Obfuscated</strong> — Source is obfuscated for security.' : ''}
     ${isFreeMode ? '🆓 <strong>Free Mode Active</strong> — No key required!' : '🔑 <strong>Key Required</strong> — Replace YOUR_KEY_HERE with a valid key.'}
   </div>
   <div class="footer-text">Protected by <strong>SpideyProtect</strong> 🕷️</div>
@@ -906,6 +995,7 @@ app.get("/admin/dashboard", isAdmin, (req, res) => {
   const totalUsers = new Set(db.map((s) => s.ownerId)).size;
   const totalKeys = keys.length;
   const enabledScripts = db.filter((s) => s.enabled).length;
+  const obfuscatedScripts = db.filter((s) => s.obfuscated).length;
 
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -949,6 +1039,7 @@ h1 { margin-bottom:20px; text-align:center; }
   <div class="stat"><span class="label">Total Users</span><span class="value">${totalUsers}</span></div>
   <div class="stat"><span class="label">Total Keys</span><span class="value">${totalKeys}</span></div>
   <div class="stat"><span class="label">Enabled Scripts</span><span class="value">${enabledScripts}</span></div>
+  <div class="stat"><span class="label">Obfuscated Scripts</span><span class="value">${obfuscatedScripts}</span></div>
   <div style="text-align:center;"><a class="back" href="/">⬅ Back to Dashboard</a></div>
 </div>
 </body>
@@ -983,6 +1074,7 @@ td { font-size:14px; }
 .status { font-size:12px; padding:4px 8px; border-radius:12px; }
 .status.enabled { background: #1a5a2a; color:#88ff88; }
 .status.disabled { background: #5a1a1a; color:#ff8888; }
+.obfuscated-badge { font-size:10px; padding:2px 8px; border-radius:10px; background:#ff6b00; color:white; margin-left:4px; }
 .actions { display:flex; gap:6px; flex-wrap:wrap; }
 .actions button { padding:6px 12px; border:none; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; transition:transform .15s; }
 .actions button:hover { transform:scale(1.05); }
@@ -1046,7 +1138,7 @@ td { font-size:14px; }
         <button class="btn-close" onclick="closeModal()">✕ Close</button>
       </div>
     </div>
-    <p><small>Owner: <span id="modalOwner"></span> | ID: <span id="modalScriptId"></span></small></p>
+    <p><small>Owner: <span id="modalOwner"></span> | ID: <span id="modalScriptId"></span> | Obfuscated: <span id="modalObfuscated"></span></small></p>
     <pre id="modalSource">-- source here</pre>
   </div>
 </div>
@@ -1075,18 +1167,20 @@ function renderScripts(data) {
   }
   let html = \`
     <table>
-      <thead><tr><th>Name</th><th>Owner</th><th>Status</th><th>Created</th><th style="min-width:200px;">Actions</th></tr></thead>
+      <thead><tr><th>Name</th><th>Owner</th><th>Status</th><th>Obfuscated</th><th>Created</th><th style="min-width:200px;">Actions</th></tr></thead>
       <tbody>
   \`;
   data.forEach(s => {
     const statusClass = s.enabled ? 'enabled' : 'disabled';
     const statusText = s.enabled ? 'Enabled' : 'Disabled';
     const created = s.createdAt ? new Date(s.createdAt).toLocaleDateString() : 'Unknown';
+    const obfuscatedText = s.obfuscated ? '✅ Yes' : '❌ No';
     html += \`
       <tr>
         <td class="script-name" title="\${escapeHtml(s.name)}">\${escapeHtml(s.name)}</td>
         <td class="owner" title="\${escapeHtml(s.ownerUsername || s.ownerId)}">\${escapeHtml(s.ownerUsername || s.ownerId)}</td>
         <td><span class="status \${statusClass}">\${statusText}</span></td>
+        <td>\${obfuscatedText}</td>
         <td>\${created}</td>
         <td class="actions">
           <button class="btn-view" onclick="viewSource('\${s.id}')">👁 View</button>
@@ -1128,6 +1222,7 @@ async function viewSource(id) {
     document.getElementById('modalScriptName').textContent = script.name;
     document.getElementById('modalOwner').textContent = script.ownerUsername || script.ownerId;
     document.getElementById('modalScriptId').textContent = script.id;
+    document.getElementById('modalObfuscated').textContent = script.obfuscated ? 'Yes' : 'No';
     const source = script.source || '-- Source not available';
     document.getElementById('modalSource').textContent = source;
     document.getElementById('sourceModal').style.display = 'flex';
@@ -1320,16 +1415,17 @@ app.get("/", requireAuth, (req, res) => {
     .map((script) => {
       const base = getBaseUrl(req);
       const loaderPage = `${base}/api/loader/${script.id}.lua`;
-      const loaderCodeDisplay = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua"))()`;
+      const loaderCodeDisplay = `script_key="YOUR_KEY_HERE"\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua"))()`;
 
       return `
 <div class="script-card">
 <div class="script-info">
     <div class="script-icon">🕷️</div>
     <div>
-        <div class="script-name">${escapeHtml(script.name)}</div>
+        <div class="script-name">${escapeHtml(script.name)} ${script.obfuscated ? '🔒' : ''}</div>
         <div class="script-status ${script.enabled ? "on" : "off"}">
             ${script.enabled ? "● Enabled" : "● Disabled"}
+            ${script.obfuscated ? "• 🔒 Obfuscated" : ""}
         </div>
     </div>
 </div>
@@ -1482,7 +1578,7 @@ textarea { grid-column: 1 / -1; min-height: 180px; resize: vertical; }
 <main class="container">
   <section class="hero">
     <h2>Protect Your Scripts 🕷️</h2>
-    <p>Upload a Lua/TXT file or paste your source manually.</p>
+    <p>Upload a Lua/TXT file or paste your source manually. Source will be automatically obfuscated!</p>
     <div class="form-grid">
       <input id="scriptName" placeholder="Script name...">
       <div class="file-row">
@@ -1491,7 +1587,7 @@ textarea { grid-column: 1 / -1; min-height: 180px; resize: vertical; }
         <span class="file-name" id="fileName">No file selected</span>
       </div>
       <textarea id="scriptSource" placeholder="Paste your Lua source here..."></textarea>
-      <button class="upload-button" onclick="uploadScript()">🕷️ Protect &amp; Upload</button>
+      <button class="upload-button" onclick="uploadScript()">🕷️ Protect &amp; Upload (Auto-Obfuscate)</button>
     </div>
   </section>
   <div class="section-title">Your Scripts</div>
@@ -1554,6 +1650,9 @@ async function uploadScript() {
   const source = scriptSource.value;
   if (!name) { alert("Enter script name!"); return; }
   if (!source.trim()) { alert("Enter Lua source!"); return; }
+  const btn = document.querySelector(".upload-button");
+  btn.textContent = "⏳ Obfuscating...";
+  btn.disabled = true;
   try {
     const response = await fetch("/api/scripts", {
       method: "POST",
@@ -1562,8 +1661,11 @@ async function uploadScript() {
     });
     const data = await response.json();
     if (!response.ok) { alert(data.error || "Upload failed"); return; }
+    alert("✅ Script uploaded and obfuscated successfully!");
     location.reload();
   } catch { alert("Server error!"); }
+  btn.textContent = "🕷️ Protect & Upload (Auto-Obfuscate)";
+  btn.disabled = false;
 }
 
 async function toggleScript(id) {
