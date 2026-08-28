@@ -536,7 +536,7 @@ app.get("/api/execute/:id", (req, res) => {
     .send(source);
 });
 
-// ==================== LOADER ENDPOINT ====================
+// ==================== LOADER ENDPOINT (FIXED) ====================
 app.get("/api/loader/:id.lua", (req, res) => {
   const scriptId = req.params.id;
   const db = readDB();
@@ -550,8 +550,8 @@ app.get("/api/loader/:id.lua", (req, res) => {
   const isFreeMode = botConfig[script.guildId]?.freeMode?.[scriptId] === true;
   const base = getBaseUrl(req);
 
-  // CEK KEY DARI HEADER (x-script-key) ATAU QUERY ATAU BODY
-  let key = req.headers["x-script-key"] || req.query.key || req.body?.key;
+  // CEK KEY DARI HEADER ATAU QUERY
+  let key = req.headers["x-script-key"] || req.query.key;
   
   // JIKA KEY ADALAH "FREE_MODE", SET FLAG
   let isFreeModeRequest = false;
@@ -559,12 +559,6 @@ app.get("/api/loader/:id.lua", (req, res) => {
     isFreeModeRequest = true;
     key = null;
   }
-
-  // CEK APAKAH INI REQUEST DARI ROBLOX EXECUTOR
-  const isRobloxRequest = req.headers["user-agent"] && 
-    (req.headers["user-agent"].includes("Roblox") || 
-     req.headers["user-agent"].includes("Lua") ||
-     req.query.hwid);
 
   // FUNCTION UNTUK KICK
   function kickPlayer(reason) {
@@ -648,12 +642,12 @@ end
       .send(fs.readFileSync(fp, "utf8"));
   }
 
-  // ===== TIDAK ADA KEY/FREEMODE → TAMPILKAN HALAMAN WEB =====
+  // ===== TIDAK ADA KEY/FREEMODE → TAMPILKAN HALAMAN WEB DENGAN LOADER CODE =====
   let loaderCode;
   if (isFreeMode) {
-    loaderCode = `script_key="FREE_MODE"\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()`;
+    loaderCode = `script_key="FREE_MODE"\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua", true))()`;
   } else {
-    loaderCode = `script_key="YOUR_KEY_HERE"\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()`;
+    loaderCode = `script_key="YOUR_KEY_HERE"\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua", true))()`;
   }
 
   return res.status(200).send(`<!DOCTYPE html>
@@ -1322,7 +1316,7 @@ app.get("/", requireAuth, (req, res) => {
     .map((script) => {
       const base = getBaseUrl(req);
       const loaderPage = `${base}/api/loader/${script.id}.lua`;
-      const loaderCodeDisplay = `script_key="YOUR_KEY_HERE"\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua"))()`;
+      const loaderCodeDisplay = `script_key="YOUR_KEY_HERE"\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua", true))()`;
 
       return `
 <div class="script-card">
