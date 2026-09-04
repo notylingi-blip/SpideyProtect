@@ -1,16 +1,9 @@
-try {
-  require('dotenv').config();
-} catch (e) {
-  console.log('⚠️ dotenv not found, using environment variables');
-}
-
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const session = require("express-session");
 const axios = require("axios");
-const cors = require("cors");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,11 +17,8 @@ const GUILDS_FILE = path.join(DATA_DIR, "guilds.json");
 
 const ADMIN_USER_ID = "1485940617342353594";
 
-// Buat direktori jika belum ada
-fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(SCRIPTS_DIR, { recursive: true });
 
-// Buat file jika belum ada
 if (!fs.existsSync(DB_FILE)) {
   fs.writeFileSync(DB_FILE, "[]", "utf8");
 }
@@ -42,10 +32,7 @@ if (!fs.existsSync(GUILDS_FILE)) {
   fs.writeFileSync(GUILDS_FILE, "[]", "utf8");
 }
 
-// Middleware
-app.use(cors());
 app.use(express.json({ limit: "15mb" }));
-app.use(express.urlencoded({ extended: true }));
 
 app.use(
   session({
@@ -53,15 +40,18 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: process.env.NODE_ENV === "production",
+      secure: false,
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   })
 );
 
-const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || "1541101786855899177";
-const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || "GANTI_DENGAN_CLIENT_SECRET_BARU";
-const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || "http://localhost:3000/auth/discord/callback";
+const DISCORD_CLIENT_ID =
+  process.env.DISCORD_CLIENT_ID || "1541101786855899177";
+const DISCORD_CLIENT_SECRET =
+  process.env.DISCORD_CLIENT_SECRET || "GANTI_DENGAN_CLIENT_SECRET_BARU";
+const DISCORD_REDIRECT_URI =
+  process.env.DISCORD_REDIRECT_URI || "http://localhost:3000/auth/discord/callback";
 const API_SECRET = process.env.API_SECRET || "spidey-internal-secret";
 
 function readDB() {
@@ -119,7 +109,10 @@ function escapeHtml(value) {
 }
 
 function getBaseUrl(req) {
-  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+  const protocol =
+    req.headers["x-forwarded-proto"] ||
+    req.protocol ||
+    "https";
   return `${protocol}://${req.get("host")}`;
 }
 
@@ -407,6 +400,7 @@ app.post("/api/scripts", requireAuth, (req, res) => {
 
   const base = getBaseUrl(req);
   const loaderPage = `${base}/api/loader/${id}.lua`;
+  const executeLoader = `${base}/api/execute/${id}`;
 
   res.json({
     success: true,
@@ -417,6 +411,7 @@ app.post("/api/scripts", requireAuth, (req, res) => {
       createdAt: script.createdAt,
     },
     loader: loaderPage,
+    executeLoader,
   });
 });
 
@@ -505,7 +500,43 @@ app.delete("/api/scripts/internal/:id", (req, res) => {
   res.json({ success: true, name: script.name });
 });
 
-// ==================== LOADER ENDPOINT ====================
+app.get("/api/execute/:id", (req, res) => {
+  const db = readDB();
+  const script = db.find((x) => x.id === req.params.id);
+
+  if (!script) {
+    return res
+      .status(404)
+      .type("text/plain")
+      .send("-- SpideyProtect: Script not found");
+  }
+
+  if (!script.enabled) {
+    return res
+      .status(403)
+      .type("text/plain")
+      .send("-- SpideyProtect: Script disabled");
+  }
+
+  const filepath = path.join(SCRIPTS_DIR, script.filename);
+
+  if (!fs.existsSync(filepath)) {
+    return res
+      .status(404)
+      .type("text/plain")
+      .send("-- SpideyProtect: Source missing");
+  }
+
+  const source = fs.readFileSync(filepath, "utf8");
+
+  res
+    .status(200)
+    .type("text/plain")
+    .set("Cache-Control", "no-store")
+    .send(source);
+});
+
+// ==================== LOADER ENDPOINT - FIXED ====================
 app.get("/api/loader/:id.lua", (req, res) => {
   const scriptId = req.params.id;
   const db = readDB();
@@ -519,40 +550,109 @@ app.get("/api/loader/:id.lua", (req, res) => {
   const isFreeMode = botConfig[script.guildId]?.freeMode?.[scriptId] === true;
   const base = getBaseUrl(req);
 
+  // CEK KEY DARI QUERY ATAU HEADER
+  const key = req.query.key || req.headers["x-script-key"];
+
+  // CEK APAKAH INI REQUEST DARI ROBLOX EXECUTOR
+  const isRobloxRequest = req.headers["user-agent"] && 
+    (req.headers["user-agent"].includes("Roblox") || 
+     req.headers["user-agent"].includes("Lua") ||
+     req.query.hwid);
+
+  // FUNCTION UNTUK KICK
   function kickPlayer(reason) {
     return `
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-if LocalPlayer then
-    LocalPlayer:Kick("${reason}")
+local plr = game:GetService("Players").LocalPlayer
+if plr then
+    plr:Kick("${reason}")
 end
-return
-`;
+    `;
   }
 
-  const userAgent = req.headers["user-agent"] || "";
-  const isRobloxRequest = userAgent.includes("Roblox") || userAgent.includes("Lua") || userAgent.includes("Synapse") || userAgent.includes("Krnl") || userAgent.includes("Fluxus") || userAgent.includes("Hydrogen") || userAgent.includes("ScriptWare") || userAgent.includes("Electron");
+  // JIKA TIDAK ADA KEY DAN BUKAN FREEMODE → KICK
+  if (!key && !req.query.freemode && isRobloxRequest) {
+    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+      .send(kickPlayer("No Key Provided"));
+  }
 
-  if (isRobloxRequest) {
-    if (isFreeMode) {
-      if (!script.enabled) {
-        return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-          .send(kickPlayer("Script Disabled - SpideyProtect"));
-      }
-      const fp = path.join(SCRIPTS_DIR, script.filename);
-      if (!fs.existsSync(fp)) {
-        return res.status(404).type("text/plain").set("Cache-Control", "no-store")
-          .send(kickPlayer("Source Missing - SpideyProtect"));
-      }
+  // JIKA ADA KEY → PROSES SEBAGAI EXECUTOR REQUEST
+  if (key) {
+    const keys = readKeys();
+    const keyData = keys.find((k) => k.key === key.toLowerCase().trim());
+
+    if (!keyData) {
       return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-        .send(fs.readFileSync(fp, "utf8"));
+        .send(kickPlayer("Invalid Key"));
     }
 
+    if (keyData.expiry && new Date(keyData.expiry) < new Date()) {
+      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Key Expired"));
+    }
+
+    if (keyData.scriptId && keyData.scriptId !== scriptId) {
+      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Key Not Valid For This Script"));
+    }
+
+    const clientHwid = req.query.hwid ? String(req.query.hwid).trim() : null;
+    if (keyData.hwid) {
+      if (!clientHwid || clientHwid !== keyData.hwid) {
+        return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+          .send(kickPlayer("HWID Mismatch"));
+      }
+    } else if (clientHwid) {
+      const allKeys = readKeys();
+      const idx = allKeys.findIndex((k) => k.key === keyData.key);
+      if (idx !== -1) {
+        allKeys[idx].hwid = clientHwid;
+        writeKeys(allKeys);
+      }
+      keyData.hwid = clientHwid;
+    }
+
+    if (!script.enabled) {
+      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Script Disabled"));
+    }
+
+    const fp = path.join(SCRIPTS_DIR, script.filename);
+    if (!fs.existsSync(fp)) {
+      return res.status(404).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Source Missing"));
+    }
     return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-      .send(kickPlayer("No Key Provided - SpideyProtect"));
+      .send(fs.readFileSync(fp, "utf8"));
   }
 
-  const loaderCode = `loadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()`;
+  // CEK FREEMODE REQUEST
+  if (req.query.freemode === "1" || req.query.freemode === "true") {
+    if (!isFreeMode) {
+      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Free Mode Not Enabled"));
+    }
+    if (!script.enabled) {
+      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Script Disabled"));
+    }
+    const fp = path.join(SCRIPTS_DIR, script.filename);
+    if (!fs.existsSync(fp)) {
+      return res.status(404).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Source Missing"));
+    }
+    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+      .send(fs.readFileSync(fp, "utf8"));
+  }
+
+  // ===== TIDAK ADA KEY/FREEMODE → TAMPILKAN HALAMAN WEB =====
+  // FORMAT LOADER: script_key di baris pertama, lalu loadstring dengan URL saja
+  let loaderCode;
+  if (isFreeMode) {
+    // FREE MODE: Tampilkan tulisan FREE MODE di loader
+    loaderCode = `-- FREE MODE ENABLED\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua?freemode=1"))()`;
+  } else {
+    loaderCode = `script_key="YOUR_KEY_HERE"\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()`;
+  }
 
   return res.status(200).send(`<!DOCTYPE html>
 <html lang="en">
@@ -615,6 +715,16 @@ h1 { font-size: 24px; font-weight: 850; color: #fff; margin-bottom: 4px; }
   margin-bottom: 18px;
 }
 .script-name span { color: #ff4242; font-weight: 700; }
+.free-badge {
+  display: inline-block;
+  background: #00c853;
+  color: white;
+  padding: 2px 12px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 800;
+  margin-left: 6px;
+}
 .loader-label {
   text-align: left;
   font-size: 11px;
@@ -663,6 +773,17 @@ h1 { font-size: 24px; font-weight: 850; color: #fff; margin-bottom: 4px; }
   color: rgba(255,255,255,0.25);
 }
 .footer-text strong { color: #006eff; }
+.security-note {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.05);
+  font-size: 12px;
+  color: rgba(255,255,255,0.4);
+  line-height: 1.6;
+}
+.security-note strong { color: #fff; }
 @media(max-width:500px) {
   .card { padding: 24px 18px; }
   .code-block code { font-size: 12px; }
@@ -677,12 +798,17 @@ h1 { font-size: 24px; font-weight: 850; color: #fff; margin-bottom: 4px; }
   <div class="protected-badge">🔒 SOURCE PROTECTED</div>
   <div class="script-name">
     SCRIPT: <span>${escapeHtml(script.name)}</span>
+    ${isFreeMode ? '<span class="free-badge">FREE MODE</span>' : ''}
   </div>
   <div class="loader-label">📜 LOADER</div>
   <div class="code-block">
     <code id="loaderCode">${escapeHtml(loaderCode)}</code>
   </div>
   <button class="copy-btn" onclick="copyLoader()">📋 Copy Loader</button>
+  <div class="security-note">
+    🔒 <strong>Source Protected</strong> — The original source is never displayed here.<br>
+    ${isFreeMode ? '🆓 <strong>Free Mode Active</strong> — No key required!' : '🔑 <strong>Key Required</strong> — Replace YOUR_KEY_HERE with a valid key.'}
+  </div>
   <div class="footer-text">Protected by <strong>SpideyProtect</strong> 🕷️</div>
 </div>
 <script>
@@ -709,12 +835,12 @@ async function copyLoader() {
 </html>`);
 });
 
-// ==================== FILES LOADER ====================
+// ==================== FILES LOADER - REDIRECT KE API LOADER ====================
 app.get("/files/loaders/:id.lua", (req, res) => {
   res.redirect(`/api/loader/${req.params.id}.lua`);
 });
 
-// ==================== API FREEMODE ====================
+// ==================== API FREEMODE UNTUK BOT ====================
 app.get("/api/freemode/:guildId/:scriptId", (req, res) => {
   const secret = req.headers["x-api-secret"];
   
@@ -728,34 +854,6 @@ app.get("/api/freemode/:guildId/:scriptId", (req, res) => {
   const isFreeMode = botConfig[guildId]?.freeMode?.[scriptId] === true;
   
   res.json({ freeMode: isFreeMode });
-});
-
-app.post("/api/freemode/update", (req, res) => {
-  const secret = req.headers["x-api-secret"];
-  
-  if (secret !== API_SECRET) {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-
-  const { guildId, scriptId, enabled } = req.body;
-  
-  if (!guildId || !scriptId) {
-    return res.status(400).json({ error: "guildId and scriptId are required" });
-  }
-
-  const botConfig = readBotConfig();
-  if (!botConfig[guildId]) botConfig[guildId] = {};
-  if (!botConfig[guildId].freeMode) botConfig[guildId].freeMode = {};
-
-  if (enabled) {
-    botConfig[guildId].freeMode[scriptId] = true;
-  } else {
-    delete botConfig[guildId].freeMode[scriptId];
-  }
-
-  writeBotConfig(botConfig);
-  
-  res.json({ success: true, freeMode: enabled });
 });
 
 // ==================== ADMIN API ====================
@@ -1222,7 +1320,7 @@ app.get("/", requireAuth, (req, res) => {
     .map((script) => {
       const base = getBaseUrl(req);
       const loaderPage = `${base}/api/loader/${script.id}.lua`;
-      const loaderCodeDisplay = `loadstring(game:HttpGet("${base}/api/loader/${script.id}.lua"))()`;
+      const loaderCodeDisplay = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua"))()`;
 
       return `
 <div class="script-card">
@@ -1498,35 +1596,6 @@ function openLoader(url) {
 
 // ==================== START ====================
 
-// Handle SIGTERM dengan graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('🛑 Received SIGTERM, shutting down gracefully...');
-  process.exit(0);
+app.listen(PORT, () => {
+  console.log(`SpideyProtect running on port ${PORT}`);
 });
-
-// Handle uncaught exceptions
-process.on('uncaughtException', (err) => {
-  console.error('❌ Uncaught Exception:', err);
-});
-
-// Handle unhandled rejections
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection:', reason);
-});
-
-const server = app.listen(PORT, () => {
-  console.log(`🕷️ SpideyProtect running on port ${PORT}`);
-  console.log(`🔗 Visit: http://localhost:${PORT}`);
-});
-
-server.on('error', (err) => {
-  if (err.code === 'ENOMEM') {
-    console.error('❌ Out of memory!');
-    process.exit(1);
-  }
-});
-
-// Keep server alive with heartbeat
-setInterval(() => {
-  // Just to keep the process alive
-}, 30000);
