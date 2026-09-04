@@ -1,20 +1,20 @@
 {
   "name": "spideyprotect",
   "version": "1.0.0",
-  "description": "SpideyProtect Lua Protection Server",
-  "private": true,
+  "description": "SpideyProtect Lua Protection System",
   "main": "server.js",
   "scripts": {
-    "start": "concurrently \"node server.js\" \"node bot.js\""
-  },
-  "engines": {
-    "node": ">=18"
+    "start": "node server.js",
+    "bot": "node bot.js",
+    "start:all": "node server.js & node bot.js"
   },
   "dependencies": {
-    "express": "^4.21.2",
+    "express": "^4.18.2",
     "express-session": "^1.17.3",
-    "axios": "^1.6.0",
-    "discord.js": "^14.15.3",
-    "concurrently": "^8.2.2"
+    "axios": "^1.6.2",
+    "discord.js": "^14.14.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
   }
 }
