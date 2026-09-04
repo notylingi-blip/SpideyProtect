@@ -1,9 +1,3 @@
-try {
-  require('dotenv').config();
-} catch (e) {
-  console.log('⚠️ dotenv not found, using environment variables');
-}
-
 const {
   Client,
   GatewayIntentBits,
@@ -27,21 +21,11 @@ const path = require("path");
 const axios = require("axios");
 
 const CONFIG = {
-  token: process.env.BOT_TOKEN || "MASUKKAN_TOKEN_BOT_ANDA_DISINI",
+  token: process.env.BOT_TOKEN || "TOKEN_LO_DISINI",
   clientId: process.env.DISCORD_CLIENT_ID || "1541101786855899177",
   apiBase: process.env.API_BASE || "https://spideyprotect-production.up.railway.app",
   apiSecret: process.env.API_SECRET || "spidey-internal-secret"
 };
-
-console.log('🚀 Starting bot...');
-console.log('🔑 Token exists:', !!process.env.BOT_TOKEN);
-console.log('🔑 Token length:', process.env.BOT_TOKEN?.length || 0);
-
-if (!process.env.BOT_TOKEN) {
-  console.error('❌ ERROR: BOT_TOKEN not found in environment variables!');
-  console.error('📝 Please set BOT_TOKEN in Railway Variables');
-  process.exit(1);
-}
 
 const DATA_DIR = path.join(__dirname, "data");
 const KEYS_FILE = path.join(DATA_DIR, "keys.json");
@@ -106,8 +90,7 @@ async function getScriptsByOwner(ownerId) {
     const data = res.data || [];
     scriptCache.set(cacheKey, { data, timestamp: Date.now() });
     return data;
-  } catch (error) {
-    console.error(`Failed to get scripts for owner ${ownerId}:`, error.message);
+  } catch {
     if (cached) return cached.data;
     return [];
   }
@@ -120,8 +103,7 @@ async function getAllScripts() {
       timeout: 5000
     });
     return res.data || [];
-  } catch (error) {
-    console.error("Failed to get all scripts:", error.message);
+  } catch {
     return [];
   }
 }
@@ -134,7 +116,9 @@ function clearCache(ownerId) {
   }
 }
 
-async function updateGuildsList(client) {
+// ==================== UPDATE GUILDS LIST ====================
+
+async function updateGuildsList() {
   try {
     const guilds = client.guilds.cache.map(g => ({
       id: g.id,
@@ -153,13 +137,9 @@ async function updateGuildsList(client) {
   }
 }
 
-const client = new Client({ 
-  intents: [
-    GatewayIntentBits.Guilds, 
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages
-  ] 
-});
+// ==================== CLIENT INIT ====================
+
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 
 const commands = [
   new SlashCommandBuilder()
@@ -233,29 +213,34 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 ].map(c => c.toJSON());
 
+// ==================== READY EVENT ====================
+
 client.once("ready", async () => {
   const rest = new REST({ version: "10" }).setToken(CONFIG.token);
   try {
     await rest.put(Routes.applicationCommands(CONFIG.clientId), { body: commands });
     console.log(`✅ Bot ready: ${client.user.tag}`);
-    console.log(`✅ Registered ${commands.length} slash commands`);
     
-    await updateGuildsList(client);
-    setInterval(() => updateGuildsList(client), 60 * 1000);
+    await updateGuildsList();
+    setInterval(updateGuildsList, 60 * 1000);
   } catch (err) { 
     console.error("❌ Failed to register commands:", err); 
   }
 });
 
+// ==================== GUILD EVENTS ====================
+
 client.on("guildCreate", async (guild) => {
   console.log(`✅ Joined guild: ${guild.name} (${guild.id})`);
-  await updateGuildsList(client);
+  await updateGuildsList();
 });
 
 client.on("guildDelete", async (guild) => {
   console.log(`❌ Left guild: ${guild.name} (${guild.id})`);
-  await updateGuildsList(client);
+  await updateGuildsList();
 });
+
+// ==================== SEND PANEL EMBED ====================
 
 async function sendPanelEmbed(channel, title, description, scriptId, scriptName, ownerId, guildId) {
   const embed = new EmbedBuilder()
@@ -308,7 +293,7 @@ async function sendPanelEmbed(channel, title, description, scriptId, scriptName,
   writeConfig(cfg);
 }
 
-// ==================== BOT INTERACTION HANDLER ====================
+// ==================== INTERACTION CREATE ====================
 
 client.on("interactionCreate", async interaction => {
   try {
@@ -319,6 +304,7 @@ client.on("interactionCreate", async interaction => {
       }).catch(() => {});
     }
 
+    // ==================== BUTTON HANDLERS ====================
     if (interaction.isButton()) {
       const customId = interaction.customId;
 
@@ -329,22 +315,15 @@ client.on("interactionCreate", async interaction => {
           const ownerId = parts[1];
           const scriptId = parts[2];
 
-          let isFreeMode = false;
-          try {
-            const freeModeRes = await axios.get(`${CONFIG.apiBase}/api/freemode/${interaction.guildId}/${scriptId}`, {
-              headers: { "x-api-secret": CONFIG.apiSecret },
-              timeout: 5000
-            });
-            isFreeMode = freeModeRes.data.freeMode === true;
-          } catch (err) {
-            const cfg = readConfig()[interaction.guildId] || {};
-            isFreeMode = cfg.freeMode && cfg.freeMode[scriptId] === true;
-          }
+          // CEK FREEMODE DULU
+          const cfg = readConfig()[interaction.guildId] || {};
+          const isFreeMode = cfg.freeMode && cfg.freeMode[scriptId] === true;
 
           if (isFreeMode) {
-            const loaderCode = `loadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${scriptId}.lua"))()`;
+            // FIXED: Free mode loader langsung ke /api/loader tanpa key
+            const loaderCode = `loadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${scriptId}.lua?freemode=1"))()`;
             return interaction.editReply({ 
-              content: `\`\`\`lua\n${loaderCode}\n\`\`\`` 
+              content: `📜 **FREE MODE ENABLED**\nNo key required!\n\`\`\`lua\n${loaderCode}\n\`\`\`` 
             }).catch(() => {});
           }
 
@@ -361,8 +340,9 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ You don't have a key for this script!" }).catch(() => {});
           }
 
-          const loaderCode = `loadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${validKey.scriptId}.lua"))()`;
-          return interaction.editReply({ content: `\`\`\`lua\n${loaderCode}\n\`\`\`` }).catch(() => {});
+          // FIXED: Loader dengan key sebagai query parameter
+          const loaderCode = `script_key="${validKey.key}"\nloadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${validKey.scriptId}.lua?key="..script_key))()`;
+          return interaction.editReply({ content: `📜 Your loader:\n\`\`\`lua\n${loaderCode}\n\`\`\`` }).catch(() => {});
         } catch (err) {
           console.error("Get script error:", err);
           return interaction.editReply({ content: "❌ Failed to get script. Please try again." }).catch(() => {});
@@ -539,6 +519,7 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({ content: "❌ Unknown button.", ephemeral: true }).catch(() => {});
     }
 
+    // ==================== MODAL SUBMIT ====================
     if (interaction.isModalSubmit() && interaction.customId === "modal_redeem") {
       await interaction.deferReply({ ephemeral: true }).catch(() => {});
       try {
@@ -580,7 +561,10 @@ client.on("interactionCreate", async interaction => {
       }
     }
 
+    // ==================== SELECT MENU ====================
     if (interaction.isStringSelectMenu()) {
+
+      // --- DELETE SCRIPT SELECT ---
       if (interaction.customId === "deletescript_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
@@ -605,6 +589,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- FREEMODE SELECT ---
       if (interaction.customId === "freemode_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
@@ -625,36 +610,10 @@ client.on("interactionCreate", async interaction => {
           if (mode === "enable") {
             cfg[interaction.guildId].freeMode[scriptId] = true;
             writeConfig(cfg);
-            
-            try {
-              await axios.post(`${CONFIG.apiBase}/api/freemode/update`, {
-                guildId: interaction.guildId,
-                scriptId: scriptId,
-                enabled: true
-              }, {
-                headers: { "x-api-secret": CONFIG.apiSecret }
-              });
-            } catch (err) {
-              console.error("Failed to sync freemode to server:", err.message);
-            }
-            
             return interaction.editReply({ content: `✅ Free mode has been **ENABLED** for the selected script!` }).catch(() => {});
           } else if (mode === "disable") {
             delete cfg[interaction.guildId].freeMode[scriptId];
             writeConfig(cfg);
-            
-            try {
-              await axios.post(`${CONFIG.apiBase}/api/freemode/update`, {
-                guildId: interaction.guildId,
-                scriptId: scriptId,
-                enabled: false
-              }, {
-                headers: { "x-api-secret": CONFIG.apiSecret }
-              });
-            } catch (err) {
-              console.error("Failed to sync freemode to server:", err.message);
-            }
-            
             return interaction.editReply({ content: `✅ Free mode has been **DISABLED** for the selected script!` }).catch(() => {});
           }
         } catch (err) {
@@ -663,6 +622,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- FREEMODE MODE SELECT ---
       if (interaction.customId === "freemode_mode_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
@@ -698,6 +658,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- SETUP PANEL SELECT ---
       if (interaction.customId === "setuppanel_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
@@ -725,6 +686,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- SET BUYER ROLE SELECT ---
       if (interaction.customId === "setbuyerrole_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
@@ -752,6 +714,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- WHITELIST SELECT ---
       if (interaction.customId.startsWith("whitelist_select:")) {
         await interaction.deferReply({ ephemeral: false }).catch(() => {});
         try {
@@ -833,6 +796,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- GENKEY SELECT ---
       if (interaction.customId.startsWith("genkey_select:")) {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
@@ -874,6 +838,7 @@ client.on("interactionCreate", async interaction => {
       }
     }
 
+    // ==================== CHAT INPUT COMMANDS ====================
     if (interaction.isChatInputCommand()) {
       const commandName = interaction.commandName;
 
@@ -897,6 +862,7 @@ client.on("interactionCreate", async interaction => {
         return interaction.reply({ content: `✅ Role <@&${role.id}> is now the bot admin role.`, ephemeral: true }).catch(() => {});
       }
 
+      // --- SETBUYERROLE ---
       if (commandName === "setbuyerrole") {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ content: "❌ Admin only.", ephemeral: true }).catch(() => {});
@@ -952,6 +918,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- SETUPPANEL ---
       if (commandName === "setuppanel") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1001,6 +968,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- DELETESCRIPT ---
       if (commandName === "deletescript") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1035,6 +1003,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- FREEMODE ---
       if (commandName === "freemode") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1071,6 +1040,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- WHITELIST ---
       if (commandName === "whitelist") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1180,6 +1150,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- BLACKLIST ---
       if (commandName === "blacklist") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1221,6 +1192,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- UNBLACKLIST ---
       if (commandName === "unblacklist") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1244,6 +1216,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- GENKEY ---
       if (commandName === "genkey") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1308,6 +1281,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- REVOKE ---
       if (commandName === "revoke") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1346,6 +1320,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- LISTKEYS ---
       if (commandName === "listkeys") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1400,6 +1375,7 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
+      // --- USERINFO ---
       if (commandName === "userinfo") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1458,17 +1434,4 @@ process.on("unhandledRejection", (error) => {
   console.error("❌ Unhandled rejection:", error);
 });
 
-process.on('SIGTERM', () => {
-  console.log('🛑 Bot received SIGTERM, shutting down...');
-  client.destroy();
-  process.exit(0);
-});
-
-client.login(CONFIG.token).catch(err => {
-  console.error("❌ Failed to login:", err);
-  console.error("❌ Error details:", err.message);
-  if (err.code === 'TokenInvalid') {
-    console.error("❌ TOKEN INVALID! Please check your BOT_TOKEN in Railway Variables");
-  }
-  process.exit(1);
-});
+client.login(CONFIG.token);
