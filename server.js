@@ -400,7 +400,6 @@ app.post("/api/scripts", requireAuth, (req, res) => {
 
   const base = getBaseUrl(req);
   const loaderPage = `${base}/api/loader/${id}.lua`;
-  const executeLoader = `${base}/api/execute/${id}`;
 
   res.json({
     success: true,
@@ -411,7 +410,6 @@ app.post("/api/scripts", requireAuth, (req, res) => {
       createdAt: script.createdAt,
     },
     loader: loaderPage,
-    executeLoader,
   });
 });
 
@@ -500,42 +498,6 @@ app.delete("/api/scripts/internal/:id", (req, res) => {
   res.json({ success: true, name: script.name });
 });
 
-app.get("/api/execute/:id", (req, res) => {
-  const db = readDB();
-  const script = db.find((x) => x.id === req.params.id);
-
-  if (!script) {
-    return res
-      .status(404)
-      .type("text/plain")
-      .send("-- SpideyProtect: Script not found");
-  }
-
-  if (!script.enabled) {
-    return res
-      .status(403)
-      .type("text/plain")
-      .send("-- SpideyProtect: Script disabled");
-  }
-
-  const filepath = path.join(SCRIPTS_DIR, script.filename);
-
-  if (!fs.existsSync(filepath)) {
-    return res
-      .status(404)
-      .type("text/plain")
-      .send("-- SpideyProtect: Source missing");
-  }
-
-  const source = fs.readFileSync(filepath, "utf8");
-
-  res
-    .status(200)
-    .type("text/plain")
-    .set("Cache-Control", "no-store")
-    .send(source);
-});
-
 // ==================== LOADER ENDPOINT ====================
 app.get("/api/loader/:id.lua", (req, res) => {
   const scriptId = req.params.id;
@@ -562,26 +524,33 @@ return
 `;
   }
 
-  // JIKA FREEMODE AKTIF → LANGSUNG KASIH SCRIPT
-  if (isFreeMode) {
-    if (!script.enabled) {
+  // CEK APAKAH INI REQUEST DARI ROBLOX EXECUTOR
+  const userAgent = req.headers["user-agent"] || "";
+  const isRobloxRequest = userAgent.includes("Roblox") || userAgent.includes("Lua") || userAgent.includes("Synapse") || userAgent.includes("Krnl") || userAgent.includes("Fluxus") || userAgent.includes("Hydrogen") || userAgent.includes("ScriptWare") || userAgent.includes("Electron");
+
+  // JIKA REQUEST DARI ROBLOX EXECUTOR
+  if (isRobloxRequest) {
+    // JIKA FREEMODE AKTIF → LANGSUNG KASIH SCRIPT
+    if (isFreeMode) {
+      if (!script.enabled) {
+        return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+          .send(kickPlayer("Script Disabled - SpideyProtect"));
+      }
+      const fp = path.join(SCRIPTS_DIR, script.filename);
+      if (!fs.existsSync(fp)) {
+        return res.status(404).type("text/plain").set("Cache-Control", "no-store")
+          .send(kickPlayer("Source Missing - SpideyProtect"));
+      }
       return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-        .send(kickPlayer("Script Disabled - SpideyProtect"));
+        .send(fs.readFileSync(fp, "utf8"));
     }
-    const fp = path.join(SCRIPTS_DIR, script.filename);
-    if (!fs.existsSync(fp)) {
-      return res.status(404).type("text/plain").set("Cache-Control", "no-store")
-        .send(kickPlayer("Source Missing - SpideyProtect"));
-    }
+
+    // JIKA BUKAN FREEMODE → KICK
     return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-      .send(fs.readFileSync(fp, "utf8"));
+      .send(kickPlayer("No Key Provided - SpideyProtect"));
   }
 
-  // JIKA BUKAN FREEMODE → KICK
-  return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-    .send(kickPlayer("No Key Provided - SpideyProtect"));
-
-  // ===== TAMPILKAN HALAMAN WEB =====
+  // ===== JIKA BUKAN DARI ROBLOX → TAMPILKAN HALAMAN WEB =====
   const loaderCode = `loadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()`;
 
   return res.status(200).send(`<!DOCTYPE html>
