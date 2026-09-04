@@ -1,4 +1,9 @@
-require('dotenv').config();
+try {
+  require('dotenv').config();
+} catch (e) {
+  console.log('⚠️ dotenv not found, using environment variables');
+}
+
 const {
   Client,
   GatewayIntentBits,
@@ -28,13 +33,22 @@ const CONFIG = {
   apiSecret: process.env.API_SECRET || "spidey-internal-secret"
 };
 
+console.log('🚀 Starting bot...');
+console.log('🔑 Token exists:', !!process.env.BOT_TOKEN);
+console.log('🔑 Token length:', process.env.BOT_TOKEN?.length || 0);
+
+if (!process.env.BOT_TOKEN) {
+  console.error('❌ ERROR: BOT_TOKEN not found in environment variables!');
+  console.error('📝 Please set BOT_TOKEN in Railway Variables');
+  process.exit(1);
+}
+
 const DATA_DIR = path.join(__dirname, "data");
 const KEYS_FILE = path.join(DATA_DIR, "keys.json");
 const CONFIG_FILE = path.join(DATA_DIR, "botconfig.json");
 const BLACKLIST_FILE = path.join(DATA_DIR, "blacklist.json");
 const CACHE_FILE = path.join(DATA_DIR, "cache.json");
 
-// Buat direktori dan file jika belum ada
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(KEYS_FILE)) fs.writeFileSync(KEYS_FILE, "[]", "utf8");
 if (!fs.existsSync(CONFIG_FILE)) fs.writeFileSync(CONFIG_FILE, "{}", "utf8");
@@ -120,8 +134,6 @@ function clearCache(ownerId) {
   }
 }
 
-// ==================== UPDATE GUILDS LIST ====================
-
 async function updateGuildsList(client) {
   try {
     const guilds = client.guilds.cache.map(g => ({
@@ -140,8 +152,6 @@ async function updateGuildsList(client) {
     console.error("❌ Failed to update guilds list:", err.message);
   }
 }
-
-// ==================== CLIENT INIT ====================
 
 const client = new Client({ 
   intents: [
@@ -223,8 +233,6 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 ].map(c => c.toJSON());
 
-// ==================== READY EVENT ====================
-
 client.once("ready", async () => {
   const rest = new REST({ version: "10" }).setToken(CONFIG.token);
   try {
@@ -239,8 +247,6 @@ client.once("ready", async () => {
   }
 });
 
-// ==================== GUILD EVENTS ====================
-
 client.on("guildCreate", async (guild) => {
   console.log(`✅ Joined guild: ${guild.name} (${guild.id})`);
   await updateGuildsList(client);
@@ -250,8 +256,6 @@ client.on("guildDelete", async (guild) => {
   console.log(`❌ Left guild: ${guild.name} (${guild.id})`);
   await updateGuildsList(client);
 });
-
-// ==================== SEND PANEL EMBED ====================
 
 async function sendPanelEmbed(channel, title, description, scriptId, scriptName, ownerId, guildId) {
   const embed = new EmbedBuilder()
@@ -304,8 +308,6 @@ async function sendPanelEmbed(channel, title, description, scriptId, scriptName,
   writeConfig(cfg);
 }
 
-// ==================== INTERACTION CREATE ====================
-
 client.on("interactionCreate", async interaction => {
   try {
     if (interaction.isButton() && isBlacklisted(interaction.user.id)) {
@@ -315,7 +317,6 @@ client.on("interactionCreate", async interaction => {
       }).catch(() => {});
     }
 
-    // ==================== BUTTON HANDLERS ====================
     if (interaction.isButton()) {
       const customId = interaction.customId;
 
@@ -326,7 +327,6 @@ client.on("interactionCreate", async interaction => {
           const ownerId = parts[1];
           const scriptId = parts[2];
 
-          // CEK FREEMODE DULU
           let isFreeMode = false;
           try {
             const freeModeRes = await axios.get(`${CONFIG.apiBase}/api/freemode/${interaction.guildId}/${scriptId}`, {
@@ -537,7 +537,6 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({ content: "❌ Unknown button.", ephemeral: true }).catch(() => {});
     }
 
-    // ==================== MODAL SUBMIT ====================
     if (interaction.isModalSubmit() && interaction.customId === "modal_redeem") {
       await interaction.deferReply({ ephemeral: true }).catch(() => {});
       try {
@@ -579,10 +578,7 @@ client.on("interactionCreate", async interaction => {
       }
     }
 
-    // ==================== SELECT MENU ====================
     if (interaction.isStringSelectMenu()) {
-
-      // --- DELETE SCRIPT SELECT ---
       if (interaction.customId === "deletescript_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
@@ -607,7 +603,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- FREEMODE SELECT ---
       if (interaction.customId === "freemode_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
@@ -666,7 +661,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- FREEMODE MODE SELECT ---
       if (interaction.customId === "freemode_mode_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
@@ -702,7 +696,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- SETUP PANEL SELECT ---
       if (interaction.customId === "setuppanel_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
@@ -730,7 +723,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- SET BUYER ROLE SELECT ---
       if (interaction.customId === "setbuyerrole_select") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
@@ -758,7 +750,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- WHITELIST SELECT ---
       if (interaction.customId.startsWith("whitelist_select:")) {
         await interaction.deferReply({ ephemeral: false }).catch(() => {});
         try {
@@ -840,7 +831,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- GENKEY SELECT ---
       if (interaction.customId.startsWith("genkey_select:")) {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         try {
@@ -882,7 +872,6 @@ client.on("interactionCreate", async interaction => {
       }
     }
 
-    // ==================== CHAT INPUT COMMANDS ====================
     if (interaction.isChatInputCommand()) {
       const commandName = interaction.commandName;
 
@@ -1467,4 +1456,10 @@ process.on("unhandledRejection", (error) => {
   console.error("❌ Unhandled rejection:", error);
 });
 
-client.login(CONFIG.token);
+client.login(CONFIG.token).catch(err => {
+  console.error("❌ Failed to login:", err);
+  console.error("❌ Error details:", err.message);
+  if (err.code === 'TokenInvalid') {
+    console.error("❌ TOKEN INVALID! Please check your BOT_TOKEN in Railway Variables");
+  }
+});
