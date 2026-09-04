@@ -536,7 +536,7 @@ app.get("/api/execute/:id", (req, res) => {
     .send(source);
 });
 
-// ==================== LOADER ENDPOINT - FIXED ====================
+// ==================== LOADER ENDPOINT ====================
 app.get("/api/loader/:id.lua", (req, res) => {
   const scriptId = req.params.id;
   const db = readDB();
@@ -550,109 +550,39 @@ app.get("/api/loader/:id.lua", (req, res) => {
   const isFreeMode = botConfig[script.guildId]?.freeMode?.[scriptId] === true;
   const base = getBaseUrl(req);
 
-  // CEK KEY DARI QUERY ATAU HEADER
-  const key = req.query.key || req.headers["x-script-key"];
-
-  // CEK APAKAH INI REQUEST DARI ROBLOX EXECUTOR
-  const isRobloxRequest = req.headers["user-agent"] && 
-    (req.headers["user-agent"].includes("Roblox") || 
-     req.headers["user-agent"].includes("Lua") ||
-     req.query.hwid);
-
   // FUNCTION UNTUK KICK
   function kickPlayer(reason) {
     return `
-local plr = game:GetService("Players").LocalPlayer
-if plr then
-    plr:Kick("${reason}")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+if LocalPlayer then
+    LocalPlayer:Kick("${reason}")
 end
-    `;
+return
+`;
   }
 
-  // JIKA TIDAK ADA KEY DAN BUKAN FREEMODE → KICK
-  if (!key && !req.query.freemode && isRobloxRequest) {
-    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-      .send(kickPlayer("No Key Provided"));
-  }
-
-  // JIKA ADA KEY → PROSES SEBAGAI EXECUTOR REQUEST
-  if (key) {
-    const keys = readKeys();
-    const keyData = keys.find((k) => k.key === key.toLowerCase().trim());
-
-    if (!keyData) {
-      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-        .send(kickPlayer("Invalid Key"));
-    }
-
-    if (keyData.expiry && new Date(keyData.expiry) < new Date()) {
-      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-        .send(kickPlayer("Key Expired"));
-    }
-
-    if (keyData.scriptId && keyData.scriptId !== scriptId) {
-      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-        .send(kickPlayer("Key Not Valid For This Script"));
-    }
-
-    const clientHwid = req.query.hwid ? String(req.query.hwid).trim() : null;
-    if (keyData.hwid) {
-      if (!clientHwid || clientHwid !== keyData.hwid) {
-        return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-          .send(kickPlayer("HWID Mismatch"));
-      }
-    } else if (clientHwid) {
-      const allKeys = readKeys();
-      const idx = allKeys.findIndex((k) => k.key === keyData.key);
-      if (idx !== -1) {
-        allKeys[idx].hwid = clientHwid;
-        writeKeys(allKeys);
-      }
-      keyData.hwid = clientHwid;
-    }
-
-    if (!script.enabled) {
-      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-        .send(kickPlayer("Script Disabled"));
-    }
-
-    const fp = path.join(SCRIPTS_DIR, script.filename);
-    if (!fs.existsSync(fp)) {
-      return res.status(404).type("text/plain").set("Cache-Control", "no-store")
-        .send(kickPlayer("Source Missing"));
-    }
-    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-      .send(fs.readFileSync(fp, "utf8"));
-  }
-
-  // CEK FREEMODE REQUEST
-  if (req.query.freemode === "1" || req.query.freemode === "true") {
-    if (!isFreeMode) {
-      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-        .send(kickPlayer("Free Mode Not Enabled"));
-    }
-    if (!script.enabled) {
-      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-        .send(kickPlayer("Script Disabled"));
-    }
-    const fp = path.join(SCRIPTS_DIR, script.filename);
-    if (!fs.existsSync(fp)) {
-      return res.status(404).type("text/plain").set("Cache-Control", "no-store")
-        .send(kickPlayer("Source Missing"));
-    }
-    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
-      .send(fs.readFileSync(fp, "utf8"));
-  }
-
-  // ===== TIDAK ADA KEY/FREEMODE → TAMPILKAN HALAMAN WEB =====
-  // FORMAT LOADER: script_key di baris pertama, lalu loadstring dengan URL saja
-  let loaderCode;
+  // JIKA FREEMODE AKTIF → LANGSUNG KASIH SCRIPT
   if (isFreeMode) {
-    // FREE MODE: Tampilkan tulisan FREE MODE di loader
-    loaderCode = `-- FREE MODE ENABLED\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua?freemode=1"))()`;
-  } else {
-    loaderCode = `script_key="YOUR_KEY_HERE"\nloadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()`;
+    if (!script.enabled) {
+      return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Script Disabled - SpideyProtect"));
+    }
+    const fp = path.join(SCRIPTS_DIR, script.filename);
+    if (!fs.existsSync(fp)) {
+      return res.status(404).type("text/plain").set("Cache-Control", "no-store")
+        .send(kickPlayer("Source Missing - SpideyProtect"));
+    }
+    return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+      .send(fs.readFileSync(fp, "utf8"));
   }
+
+  // JIKA BUKAN FREEMODE → KICK
+  return res.status(200).type("text/plain").set("Cache-Control", "no-store")
+    .send(kickPlayer("No Key Provided - SpideyProtect"));
+
+  // ===== TAMPILKAN HALAMAN WEB =====
+  const loaderCode = `loadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()`;
 
   return res.status(200).send(`<!DOCTYPE html>
 <html lang="en">
@@ -715,16 +645,6 @@ h1 { font-size: 24px; font-weight: 850; color: #fff; margin-bottom: 4px; }
   margin-bottom: 18px;
 }
 .script-name span { color: #ff4242; font-weight: 700; }
-.free-badge {
-  display: inline-block;
-  background: #00c853;
-  color: white;
-  padding: 2px 12px;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 800;
-  margin-left: 6px;
-}
 .loader-label {
   text-align: left;
   font-size: 11px;
@@ -773,17 +693,6 @@ h1 { font-size: 24px; font-weight: 850; color: #fff; margin-bottom: 4px; }
   color: rgba(255,255,255,0.25);
 }
 .footer-text strong { color: #006eff; }
-.security-note {
-  margin-top: 14px;
-  padding: 12px;
-  border-radius: 10px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.05);
-  font-size: 12px;
-  color: rgba(255,255,255,0.4);
-  line-height: 1.6;
-}
-.security-note strong { color: #fff; }
 @media(max-width:500px) {
   .card { padding: 24px 18px; }
   .code-block code { font-size: 12px; }
@@ -798,17 +707,12 @@ h1 { font-size: 24px; font-weight: 850; color: #fff; margin-bottom: 4px; }
   <div class="protected-badge">🔒 SOURCE PROTECTED</div>
   <div class="script-name">
     SCRIPT: <span>${escapeHtml(script.name)}</span>
-    ${isFreeMode ? '<span class="free-badge">FREE MODE</span>' : ''}
   </div>
   <div class="loader-label">📜 LOADER</div>
   <div class="code-block">
     <code id="loaderCode">${escapeHtml(loaderCode)}</code>
   </div>
   <button class="copy-btn" onclick="copyLoader()">📋 Copy Loader</button>
-  <div class="security-note">
-    🔒 <strong>Source Protected</strong> — The original source is never displayed here.<br>
-    ${isFreeMode ? '🆓 <strong>Free Mode Active</strong> — No key required!' : '🔑 <strong>Key Required</strong> — Replace YOUR_KEY_HERE with a valid key.'}
-  </div>
   <div class="footer-text">Protected by <strong>SpideyProtect</strong> 🕷️</div>
 </div>
 <script>
@@ -854,6 +758,35 @@ app.get("/api/freemode/:guildId/:scriptId", (req, res) => {
   const isFreeMode = botConfig[guildId]?.freeMode?.[scriptId] === true;
   
   res.json({ freeMode: isFreeMode });
+});
+
+// ==================== API FREEMODE UPDATE ====================
+app.post("/api/freemode/update", (req, res) => {
+  const secret = req.headers["x-api-secret"];
+  
+  if (secret !== API_SECRET) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const { guildId, scriptId, enabled } = req.body;
+  
+  if (!guildId || !scriptId) {
+    return res.status(400).json({ error: "guildId and scriptId are required" });
+  }
+
+  const botConfig = readBotConfig();
+  if (!botConfig[guildId]) botConfig[guildId] = {};
+  if (!botConfig[guildId].freeMode) botConfig[guildId].freeMode = {};
+
+  if (enabled) {
+    botConfig[guildId].freeMode[scriptId] = true;
+  } else {
+    delete botConfig[guildId].freeMode[scriptId];
+  }
+
+  writeBotConfig(botConfig);
+  
+  res.json({ success: true, freeMode: enabled });
 });
 
 // ==================== ADMIN API ====================
@@ -1320,7 +1253,7 @@ app.get("/", requireAuth, (req, res) => {
     .map((script) => {
       const base = getBaseUrl(req);
       const loaderPage = `${base}/api/loader/${script.id}.lua`;
-      const loaderCodeDisplay = `script_key="YOUR_KEY_HERE";\nloadstring(game:HttpGet("${base}/api/loader/${script.id}.lua"))()`;
+      const loaderCodeDisplay = `loadstring(game:HttpGet("${base}/api/loader/${script.id}.lua"))()`;
 
       return `
 <div class="script-card">
