@@ -1,4 +1,9 @@
-require('dotenv').config();
+try {
+  require('dotenv').config();
+} catch (e) {
+  console.log('⚠️ dotenv not found, using environment variables');
+}
+
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
@@ -59,7 +64,6 @@ const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || "GANTI_DENGAN
 const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || "http://localhost:3000/auth/discord/callback";
 const API_SECRET = process.env.API_SECRET || "spidey-internal-secret";
 
-// Fungsi database
 function readDB() {
   try {
     return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
@@ -515,7 +519,6 @@ app.get("/api/loader/:id.lua", (req, res) => {
   const isFreeMode = botConfig[script.guildId]?.freeMode?.[scriptId] === true;
   const base = getBaseUrl(req);
 
-  // FUNCTION UNTUK KICK
   function kickPlayer(reason) {
     return `
 local Players = game:GetService("Players")
@@ -527,13 +530,10 @@ return
 `;
   }
 
-  // CEK APAKAH INI REQUEST DARI ROBLOX EXECUTOR
   const userAgent = req.headers["user-agent"] || "";
   const isRobloxRequest = userAgent.includes("Roblox") || userAgent.includes("Lua") || userAgent.includes("Synapse") || userAgent.includes("Krnl") || userAgent.includes("Fluxus") || userAgent.includes("Hydrogen") || userAgent.includes("ScriptWare") || userAgent.includes("Electron");
 
-  // JIKA REQUEST DARI ROBLOX EXECUTOR
   if (isRobloxRequest) {
-    // JIKA FREEMODE AKTIF → LANGSUNG KASIH SCRIPT
     if (isFreeMode) {
       if (!script.enabled) {
         return res.status(200).type("text/plain").set("Cache-Control", "no-store")
@@ -548,12 +548,10 @@ return
         .send(fs.readFileSync(fp, "utf8"));
     }
 
-    // JIKA BUKAN FREEMODE → KICK
     return res.status(200).type("text/plain").set("Cache-Control", "no-store")
       .send(kickPlayer("No Key Provided - SpideyProtect"));
   }
 
-  // ===== JIKA BUKAN DARI ROBLOX → TAMPILKAN HALAMAN WEB =====
   const loaderCode = `loadstring(game:HttpGet("${base}/api/loader/${scriptId}.lua"))()`;
 
   return res.status(200).send(`<!DOCTYPE html>
@@ -711,12 +709,12 @@ async function copyLoader() {
 </html>`);
 });
 
-// ==================== FILES LOADER - REDIRECT KE API LOADER ====================
+// ==================== FILES LOADER ====================
 app.get("/files/loaders/:id.lua", (req, res) => {
   res.redirect(`/api/loader/${req.params.id}.lua`);
 });
 
-// ==================== API FREEMODE UNTUK BOT ====================
+// ==================== API FREEMODE ====================
 app.get("/api/freemode/:guildId/:scriptId", (req, res) => {
   const secret = req.headers["x-api-secret"];
   
@@ -732,7 +730,6 @@ app.get("/api/freemode/:guildId/:scriptId", (req, res) => {
   res.json({ freeMode: isFreeMode });
 });
 
-// ==================== API FREEMODE UPDATE ====================
 app.post("/api/freemode/update", (req, res) => {
   const secret = req.headers["x-api-secret"];
   
