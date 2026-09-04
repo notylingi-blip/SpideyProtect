@@ -1,9 +1,11 @@
+require('dotenv').config();
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const session = require("express-session");
 const axios = require("axios");
+const cors = require("cors");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -17,8 +19,11 @@ const GUILDS_FILE = path.join(DATA_DIR, "guilds.json");
 
 const ADMIN_USER_ID = "1485940617342353594";
 
+// Buat direktori jika belum ada
+fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(SCRIPTS_DIR, { recursive: true });
 
+// Buat file jika belum ada
 if (!fs.existsSync(DB_FILE)) {
   fs.writeFileSync(DB_FILE, "[]", "utf8");
 }
@@ -32,7 +37,10 @@ if (!fs.existsSync(GUILDS_FILE)) {
   fs.writeFileSync(GUILDS_FILE, "[]", "utf8");
 }
 
+// Middleware
+app.use(cors());
 app.use(express.json({ limit: "15mb" }));
+app.use(express.urlencoded({ extended: true }));
 
 app.use(
   session({
@@ -40,20 +48,18 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: false,
+      secure: process.env.NODE_ENV === "production",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   })
 );
 
-const DISCORD_CLIENT_ID =
-  process.env.DISCORD_CLIENT_ID || "1541101786855899177";
-const DISCORD_CLIENT_SECRET =
-  process.env.DISCORD_CLIENT_SECRET || "GANTI_DENGAN_CLIENT_SECRET_BARU";
-const DISCORD_REDIRECT_URI =
-  process.env.DISCORD_REDIRECT_URI || "http://localhost:3000/auth/discord/callback";
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || "1541101786855899177";
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || "GANTI_DENGAN_CLIENT_SECRET_BARU";
+const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || "http://localhost:3000/auth/discord/callback";
 const API_SECRET = process.env.API_SECRET || "spidey-internal-secret";
 
+// Fungsi database
 function readDB() {
   try {
     return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
@@ -109,10 +115,7 @@ function escapeHtml(value) {
 }
 
 function getBaseUrl(req) {
-  const protocol =
-    req.headers["x-forwarded-proto"] ||
-    req.protocol ||
-    "https";
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
   return `${protocol}://${req.get("host")}`;
 }
 
@@ -1499,5 +1502,12 @@ function openLoader(url) {
 // ==================== START ====================
 
 app.listen(PORT, () => {
-  console.log(`SpideyProtect running on port ${PORT}`);
+  console.log(`🕷️ SpideyProtect running on port ${PORT}`);
+  console.log(`🔗 Visit: http://localhost:${PORT}`);
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error("Server error:", err);
+  res.status(500).json({ error: "Internal server error" });
 });
