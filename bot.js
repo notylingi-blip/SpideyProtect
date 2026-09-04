@@ -1,3 +1,4 @@
+require('dotenv').config();
 const {
   Client,
   GatewayIntentBits,
@@ -21,7 +22,7 @@ const path = require("path");
 const axios = require("axios");
 
 const CONFIG = {
-  token: process.env.BOT_TOKEN || "TOKEN_LO_DISINI",
+  token: process.env.BOT_TOKEN || "MASUKKAN_TOKEN_BOT_ANDA_DISINI",
   clientId: process.env.DISCORD_CLIENT_ID || "1541101786855899177",
   apiBase: process.env.API_BASE || "https://spideyprotect-production.up.railway.app",
   apiSecret: process.env.API_SECRET || "spidey-internal-secret"
@@ -33,6 +34,7 @@ const CONFIG_FILE = path.join(DATA_DIR, "botconfig.json");
 const BLACKLIST_FILE = path.join(DATA_DIR, "blacklist.json");
 const CACHE_FILE = path.join(DATA_DIR, "cache.json");
 
+// Buat direktori dan file jika belum ada
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(KEYS_FILE)) fs.writeFileSync(KEYS_FILE, "[]", "utf8");
 if (!fs.existsSync(CONFIG_FILE)) fs.writeFileSync(CONFIG_FILE, "{}", "utf8");
@@ -90,7 +92,8 @@ async function getScriptsByOwner(ownerId) {
     const data = res.data || [];
     scriptCache.set(cacheKey, { data, timestamp: Date.now() });
     return data;
-  } catch {
+  } catch (error) {
+    console.error(`Failed to get scripts for owner ${ownerId}:`, error.message);
     if (cached) return cached.data;
     return [];
   }
@@ -103,7 +106,8 @@ async function getAllScripts() {
       timeout: 5000
     });
     return res.data || [];
-  } catch {
+  } catch (error) {
+    console.error("Failed to get all scripts:", error.message);
     return [];
   }
 }
@@ -118,7 +122,7 @@ function clearCache(ownerId) {
 
 // ==================== UPDATE GUILDS LIST ====================
 
-async function updateGuildsList() {
+async function updateGuildsList(client) {
   try {
     const guilds = client.guilds.cache.map(g => ({
       id: g.id,
@@ -139,7 +143,13 @@ async function updateGuildsList() {
 
 // ==================== CLIENT INIT ====================
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
+const client = new Client({ 
+  intents: [
+    GatewayIntentBits.Guilds, 
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages
+  ] 
+});
 
 const commands = [
   new SlashCommandBuilder()
@@ -220,9 +230,10 @@ client.once("ready", async () => {
   try {
     await rest.put(Routes.applicationCommands(CONFIG.clientId), { body: commands });
     console.log(`✅ Bot ready: ${client.user.tag}`);
+    console.log(`✅ Registered ${commands.length} slash commands`);
     
-    await updateGuildsList();
-    setInterval(updateGuildsList, 60 * 1000);
+    await updateGuildsList(client);
+    setInterval(() => updateGuildsList(client), 60 * 1000);
   } catch (err) { 
     console.error("❌ Failed to register commands:", err); 
   }
@@ -232,12 +243,12 @@ client.once("ready", async () => {
 
 client.on("guildCreate", async (guild) => {
   console.log(`✅ Joined guild: ${guild.name} (${guild.id})`);
-  await updateGuildsList();
+  await updateGuildsList(client);
 });
 
 client.on("guildDelete", async (guild) => {
   console.log(`❌ Left guild: ${guild.name} (${guild.id})`);
-  await updateGuildsList();
+  await updateGuildsList(client);
 });
 
 // ==================== SEND PANEL EMBED ====================
