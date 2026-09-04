@@ -1498,13 +1498,35 @@ function openLoader(url) {
 
 // ==================== START ====================
 
-app.listen(PORT, () => {
+// Handle SIGTERM dengan graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('🛑 Received SIGTERM, shutting down gracefully...');
+  process.exit(0);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught Exception:', err);
+});
+
+// Handle unhandled rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection:', reason);
+});
+
+const server = app.listen(PORT, () => {
   console.log(`🕷️ SpideyProtect running on port ${PORT}`);
   console.log(`🔗 Visit: http://localhost:${PORT}`);
 });
 
-// Error handler
-app.use((err, req, res, next) => {
-  console.error("Server error:", err);
-  res.status(500).json({ error: "Internal server error" });
+server.on('error', (err) => {
+  if (err.code === 'ENOMEM') {
+    console.error('❌ Out of memory!');
+    process.exit(1);
+  }
 });
+
+// Keep server alive with heartbeat
+setInterval(() => {
+  // Just to keep the process alive
+}, 30000);
