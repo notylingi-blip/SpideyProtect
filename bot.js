@@ -308,6 +308,8 @@ async function sendPanelEmbed(channel, title, description, scriptId, scriptName,
   writeConfig(cfg);
 }
 
+// ==================== BOT INTERACTION HANDLER ====================
+
 client.on("interactionCreate", async interaction => {
   try {
     if (interaction.isButton() && isBlacklisted(interaction.user.id)) {
@@ -1456,10 +1458,17 @@ process.on("unhandledRejection", (error) => {
   console.error("❌ Unhandled rejection:", error);
 });
 
+process.on('SIGTERM', () => {
+  console.log('🛑 Bot received SIGTERM, shutting down...');
+  client.destroy();
+  process.exit(0);
+});
+
 client.login(CONFIG.token).catch(err => {
   console.error("❌ Failed to login:", err);
   console.error("❌ Error details:", err.message);
   if (err.code === 'TokenInvalid') {
     console.error("❌ TOKEN INVALID! Please check your BOT_TOKEN in Railway Variables");
   }
+  process.exit(1);
 });
