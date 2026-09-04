@@ -316,14 +316,22 @@ client.on("interactionCreate", async interaction => {
           const scriptId = parts[2];
 
           // CEK FREEMODE DULU
-          const cfg = readConfig()[interaction.guildId] || {};
-          const isFreeMode = cfg.freeMode && cfg.freeMode[scriptId] === true;
+          let isFreeMode = false;
+          try {
+            const freeModeRes = await axios.get(`${CONFIG.apiBase}/api/freemode/${interaction.guildId}/${scriptId}`, {
+              headers: { "x-api-secret": CONFIG.apiSecret },
+              timeout: 5000
+            });
+            isFreeMode = freeModeRes.data.freeMode === true;
+          } catch (err) {
+            const cfg = readConfig()[interaction.guildId] || {};
+            isFreeMode = cfg.freeMode && cfg.freeMode[scriptId] === true;
+          }
 
           if (isFreeMode) {
-            // FIXED: Free mode loader langsung ke /api/loader tanpa key
-            const loaderCode = `loadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${scriptId}.lua?freemode=1"))()`;
+            const loaderCode = `loadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${scriptId}.lua"))()`;
             return interaction.editReply({ 
-              content: `📜 **FREE MODE ENABLED**\nNo key required!\n\`\`\`lua\n${loaderCode}\n\`\`\`` 
+              content: `\`\`\`lua\n${loaderCode}\n\`\`\`` 
             }).catch(() => {});
           }
 
@@ -340,9 +348,8 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply({ content: "❌ You don't have a key for this script!" }).catch(() => {});
           }
 
-          // FIXED: Loader dengan key sebagai query parameter
-          const loaderCode = `script_key="${validKey.key}"\nloadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${validKey.scriptId}.lua?key="..script_key))()`;
-          return interaction.editReply({ content: `📜 Your loader:\n\`\`\`lua\n${loaderCode}\n\`\`\`` }).catch(() => {});
+          const loaderCode = `loadstring(game:HttpGet("${CONFIG.apiBase}/api/loader/${validKey.scriptId}.lua"))()`;
+          return interaction.editReply({ content: `\`\`\`lua\n${loaderCode}\n\`\`\`` }).catch(() => {});
         } catch (err) {
           console.error("Get script error:", err);
           return interaction.editReply({ content: "❌ Failed to get script. Please try again." }).catch(() => {});
@@ -610,10 +617,36 @@ client.on("interactionCreate", async interaction => {
           if (mode === "enable") {
             cfg[interaction.guildId].freeMode[scriptId] = true;
             writeConfig(cfg);
+            
+            try {
+              await axios.post(`${CONFIG.apiBase}/api/freemode/update`, {
+                guildId: interaction.guildId,
+                scriptId: scriptId,
+                enabled: true
+              }, {
+                headers: { "x-api-secret": CONFIG.apiSecret }
+              });
+            } catch (err) {
+              console.error("Failed to sync freemode to server:", err.message);
+            }
+            
             return interaction.editReply({ content: `✅ Free mode has been **ENABLED** for the selected script!` }).catch(() => {});
           } else if (mode === "disable") {
             delete cfg[interaction.guildId].freeMode[scriptId];
             writeConfig(cfg);
+            
+            try {
+              await axios.post(`${CONFIG.apiBase}/api/freemode/update`, {
+                guildId: interaction.guildId,
+                scriptId: scriptId,
+                enabled: false
+              }, {
+                headers: { "x-api-secret": CONFIG.apiSecret }
+              });
+            } catch (err) {
+              console.error("Failed to sync freemode to server:", err.message);
+            }
+            
             return interaction.editReply({ content: `✅ Free mode has been **DISABLED** for the selected script!` }).catch(() => {});
           }
         } catch (err) {
@@ -862,7 +895,6 @@ client.on("interactionCreate", async interaction => {
         return interaction.reply({ content: `✅ Role <@&${role.id}> is now the bot admin role.`, ephemeral: true }).catch(() => {});
       }
 
-      // --- SETBUYERROLE ---
       if (commandName === "setbuyerrole") {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ content: "❌ Admin only.", ephemeral: true }).catch(() => {});
@@ -918,7 +950,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- SETUPPANEL ---
       if (commandName === "setuppanel") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -968,7 +999,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- DELETESCRIPT ---
       if (commandName === "deletescript") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1003,7 +1033,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- FREEMODE ---
       if (commandName === "freemode") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1040,7 +1069,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- WHITELIST ---
       if (commandName === "whitelist") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1150,7 +1178,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- BLACKLIST ---
       if (commandName === "blacklist") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1192,7 +1219,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- UNBLACKLIST ---
       if (commandName === "unblacklist") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1216,7 +1242,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- GENKEY ---
       if (commandName === "genkey") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1281,7 +1306,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- REVOKE ---
       if (commandName === "revoke") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1320,7 +1344,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- LISTKEYS ---
       if (commandName === "listkeys") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
@@ -1375,7 +1398,6 @@ client.on("interactionCreate", async interaction => {
         }
       }
 
-      // --- USERINFO ---
       if (commandName === "userinfo") {
         if (!hasPermission(interaction.member, interaction.guildId)) {
           return interaction.reply({ content: "❌ No Permission.", ephemeral: true }).catch(() => {});
